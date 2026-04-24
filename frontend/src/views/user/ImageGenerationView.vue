@@ -204,7 +204,7 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div class="space-y-1.5">
               <label class="input-label">{{ t('imageGeneration.form.size') }}</label>
               <Select
@@ -221,15 +221,6 @@
                 type="number"
                 :disabled="submitting"
                 placeholder="1"
-              />
-            </div>
-
-            <div class="space-y-1.5">
-              <label class="input-label">{{ t('imageGeneration.form.responseFormat') }}</label>
-              <Select
-                v-model="responseFormat"
-                :options="responseFormatOptions"
-                :disabled="submitting"
               />
             </div>
           </div>
@@ -297,7 +288,19 @@
               </div>
 
               <div class="space-y-1.5">
-                <label class="input-label">{{ t('imageGeneration.form.moderation') }}</label>
+                <div class="mb-1.5 flex items-center gap-1">
+                  <label class="input-label mb-0">{{ t('imageGeneration.form.moderation') }}</label>
+                  <HelpTooltip :content="t('imageGeneration.form.moderationHelp')">
+                    <template #trigger>
+                      <Icon
+                        name="questionCircle"
+                        size="sm"
+                        :stroke-width="2"
+                        class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                      />
+                    </template>
+                  </HelpTooltip>
+                </div>
                 <Select
                   v-model="moderation"
                   :options="moderationOptions"
@@ -305,21 +308,49 @@
                 />
               </div>
 
-              <Input
-                v-model="outputCompression"
-                type="number"
-                :label="t('imageGeneration.form.outputCompression')"
-                :placeholder="t('imageGeneration.form.outputCompressionPlaceholder')"
-                :disabled="submitting"
-              />
+              <div class="space-y-1.5">
+                <div class="mb-1.5 flex items-center gap-1">
+                  <label class="input-label mb-0">{{ t('imageGeneration.form.outputCompression') }}</label>
+                  <HelpTooltip :content="t('imageGeneration.form.outputCompressionHelp')">
+                    <template #trigger>
+                      <Icon
+                        name="questionCircle"
+                        size="sm"
+                        :stroke-width="2"
+                        class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                      />
+                    </template>
+                  </HelpTooltip>
+                </div>
+                <Input
+                  v-model="outputCompression"
+                  type="number"
+                  :placeholder="t('imageGeneration.form.outputCompressionPlaceholder')"
+                  :disabled="submitting"
+                />
+              </div>
 
-              <Input
-                v-model="partialImages"
-                type="number"
-                :label="t('imageGeneration.form.partialImages')"
-                :placeholder="t('imageGeneration.form.partialImagesPlaceholder')"
-                :disabled="submitting"
-              />
+              <div class="space-y-1.5">
+                <div class="mb-1.5 flex items-center gap-1">
+                  <label class="input-label mb-0">{{ t('imageGeneration.form.partialImages') }}</label>
+                  <HelpTooltip :content="t('imageGeneration.form.partialImagesHelp')">
+                    <template #trigger>
+                      <Icon
+                        name="questionCircle"
+                        size="sm"
+                        :stroke-width="2"
+                        class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                      />
+                    </template>
+                  </HelpTooltip>
+                </div>
+                <Input
+                  v-model="partialImages"
+                  type="number"
+                  :placeholder="t('imageGeneration.form.partialImagesPlaceholder')"
+                  :disabled="submitting"
+                />
+              </div>
             </div>
           </div>
 
@@ -551,6 +582,7 @@ import { useI18n } from 'vue-i18n'
 import { keysAPI } from '@/api/keys'
 import type { ApiKey } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Select from '@/components/common/Select.vue'
 import Input from '@/components/common/Input.vue'
 import TextArea from '@/components/common/TextArea.vue'
@@ -559,7 +591,6 @@ import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 type ImageMode = 'generate' | 'edit'
-type ResponseFormat = 'b64_json' | 'url'
 
 interface LocalImagePreview {
   id: string
@@ -584,7 +615,6 @@ interface CachedImageGenerationResult {
     model: string
     size: string
     n: string
-    responseFormat: ResponseFormat
     quality: string
     background: string
     outputFormat: string
@@ -610,6 +640,7 @@ interface ImagesApiResponse {
 }
 
 const LOCAL_CACHE_KEY = 'sub2api:last-image-generation-result'
+const FIXED_RESPONSE_FORMAT = 'url'
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
@@ -626,7 +657,6 @@ const prompt = ref('')
 const model = ref('gpt-image-2')
 const size = ref('1024x1024')
 const n = ref('1')
-const responseFormat = ref<ResponseFormat>('b64_json')
 const quality = ref('')
 const background = ref('')
 const outputFormat = ref('')
@@ -654,43 +684,38 @@ const sizeOptions = computed(() => [
   { value: 'auto', label: t('imageGeneration.form.sizeAuto') },
 ])
 
-const responseFormatOptions = computed(() => [
-  { value: 'b64_json', label: t('imageGeneration.form.responseFormatBase64') },
-  { value: 'url', label: t('imageGeneration.form.responseFormatUrl') },
-])
-
 const qualityOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'low', label: 'low' },
-  { value: 'medium', label: 'medium' },
-  { value: 'high', label: 'high' },
-  { value: 'auto', label: 'auto' },
+  { value: 'low', label: t('imageGeneration.form.qualityLow') },
+  { value: 'medium', label: t('imageGeneration.form.qualityMedium') },
+  { value: 'high', label: t('imageGeneration.form.qualityHigh') },
+  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
 ])
 
 const backgroundOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'transparent', label: 'transparent' },
-  { value: 'opaque', label: 'opaque' },
-  { value: 'auto', label: 'auto' },
+  { value: 'transparent', label: t('imageGeneration.form.backgroundTransparent') },
+  { value: 'opaque', label: t('imageGeneration.form.backgroundOpaque') },
+  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
 ])
 
 const outputFormatOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'png', label: 'png' },
-  { value: 'jpeg', label: 'jpeg' },
-  { value: 'webp', label: 'webp' },
+  { value: 'png', label: t('imageGeneration.form.outputFormatPng') },
+  { value: 'jpeg', label: t('imageGeneration.form.outputFormatJpeg') },
+  { value: 'webp', label: t('imageGeneration.form.outputFormatWebp') },
 ])
 
 const styleOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'vivid', label: 'vivid' },
-  { value: 'natural', label: 'natural' },
+  { value: 'vivid', label: t('imageGeneration.form.styleVivid') },
+  { value: 'natural', label: t('imageGeneration.form.styleNatural') },
 ])
 
 const moderationOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'auto', label: 'auto' },
-  { value: 'low', label: 'low' },
+  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
+  { value: 'low', label: t('imageGeneration.form.moderationLow') },
 ])
 
 const keyOptions = computed(() =>
@@ -770,7 +795,7 @@ watch(mode, (value) => {
   }
 })
 
-watch([selectedKeyId, mode, prompt, model, size, n, responseFormat, quality, background, outputFormat, moderation, style, outputCompression, partialImages, advancedOpen], () => {
+watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputFormat, moderation, style, outputCompression, partialImages, advancedOpen], () => {
   if (!restoredFromCache.value || submitting.value) {
     return
   }
@@ -882,7 +907,6 @@ function resetForm() {
   model.value = 'gpt-image-2'
   size.value = '1024x1024'
   n.value = '1'
-  responseFormat.value = 'b64_json'
   quality.value = ''
   background.value = ''
   outputFormat.value = ''
@@ -989,7 +1013,7 @@ function buildJsonPayload() {
   const payload: Record<string, string | number | boolean> = {
     prompt: prompt.value.trim(),
     model: model.value.trim() || 'gpt-image-2',
-    response_format: responseFormat.value,
+    response_format: FIXED_RESPONSE_FORMAT,
     stream: false,
   }
 
@@ -1015,7 +1039,7 @@ function buildEditFormData() {
   const formData = new FormData()
   formData.append('prompt', prompt.value.trim())
   formData.append('model', model.value.trim() || 'gpt-image-2')
-  formData.append('response_format', responseFormat.value)
+  formData.append('response_format', FIXED_RESPONSE_FORMAT)
   formData.append('stream', 'false')
 
   const imageCount = normalizePositiveInt(n.value)
@@ -1149,7 +1173,6 @@ function persistCachedResult() {
       model: model.value,
       size: size.value,
       n: n.value,
-      responseFormat: responseFormat.value,
       quality: quality.value,
       background: background.value,
       outputFormat: outputFormat.value,
@@ -1183,7 +1206,6 @@ function restoreCachedResult() {
     model.value = cached.form.model
     size.value = cached.form.size
     n.value = cached.form.n
-    responseFormat.value = cached.form.responseFormat
     quality.value = cached.form.quality
     background.value = cached.form.background
     outputFormat.value = cached.form.outputFormat
