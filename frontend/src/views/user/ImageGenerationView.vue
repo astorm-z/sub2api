@@ -53,13 +53,13 @@
             v-model="prompt"
             :label="t('imageGeneration.form.prompt')"
             :placeholder="t(promptPlaceholderKey)"
-            :hint="mode === 'generate' ? t('imageGeneration.form.promptHint') : t('imageGeneration.form.editPromptHint')"
+            :hint="t(promptHintKey)"
             :disabled="submitting"
             rows="4"
           />
 
           <div
-            v-if="mode === 'edit'"
+            v-if="mode !== 'generate'"
             class="space-y-4 rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-900/40"
           >
             <div class="space-y-2">
@@ -69,7 +69,7 @@
                     {{ t('imageGeneration.form.sourceImages') }}
                   </div>
                   <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('imageGeneration.form.sourceImagesHint') }}
+                    {{ t(sourceImagesHintKey) }}
                   </p>
                 </div>
                 <label class="btn btn-secondary btn-sm cursor-pointer">
@@ -98,7 +98,8 @@
                   <img
                     :src="preview.url"
                     :alt="preview.file.name"
-                    class="h-28 w-full object-cover"
+                    class="h-28 w-full cursor-pointer object-cover"
+                    @click="openPreview(preview.url, preview.file.name)"
                   />
                   <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-3 py-2 text-xs dark:border-dark-600">
                     <span class="truncate text-gray-600 dark:text-gray-300">{{ preview.file.name }}</span>
@@ -123,54 +124,113 @@
               </div>
             </div>
 
-            <div class="space-y-2">
-              <div class="flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-sm font-medium text-gray-900 dark:text-white">
-                    {{ t('imageGeneration.form.maskImage') }}
+            <Teleport to="body" :disabled="!maskEditorExpanded">
+              <div
+                v-if="mode === 'mask' && primarySourceImage"
+                ref="maskEditorPanelRef"
+                :class="maskEditorPanelClass"
+              >
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div class="text-sm font-medium text-gray-900 dark:text-white">
+                      {{ t('imageGeneration.form.maskEditor') }}
+                    </div>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">
+                      {{ t('imageGeneration.form.maskEditorHint') }}
+                    </p>
                   </div>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">
-                    {{ t('imageGeneration.form.maskImageHint') }}
-                  </p>
-                </div>
-                <div class="flex items-center gap-2">
-                  <label class="btn btn-secondary btn-sm cursor-pointer">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      class="hidden"
-                      :disabled="submitting"
-                      @change="handleMaskImageChange"
-                    />
-                    <Icon name="plus" size="sm" class="mr-1.5" />
-                    {{ maskImagePreview ? t('imageGeneration.form.replaceMask') : t('imageGeneration.form.uploadMask') }}
-                  </label>
                   <button
-                    v-if="maskImagePreview"
                     type="button"
-                    class="btn btn-secondary btn-sm text-red-600 dark:text-red-400"
-                    :disabled="submitting"
-                    @click="clearMaskImage"
+                    class="btn btn-secondary btn-sm"
+                    @click="toggleMaskEditorFullscreen"
                   >
-                    <Icon name="trash" size="sm" class="mr-1.5" />
-                    {{ t('common.remove') }}
+                    <Icon name="eye" size="sm" class="mr-1.5" />
+                    {{ maskEditorExpanded ? t('imageGeneration.form.exitMaskEditorFullscreen') : t('imageGeneration.form.expandMaskEditor') }}
                   </button>
                 </div>
-              </div>
 
-              <div
-                v-if="maskImagePreview"
-                class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800"
-              >
-                <img
-                  :src="maskImagePreview.url"
-                  :alt="maskImagePreview.file.name"
-                  class="max-h-56 w-full object-contain"
-                />
-                <div class="border-t border-gray-100 px-3 py-2 text-xs text-gray-600 dark:border-dark-600 dark:text-gray-300">
-                  {{ maskImagePreview.file.name }}
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    v-for="tool in maskToolOptions"
+                    :key="tool.value"
+                    type="button"
+                    class="btn btn-sm"
+                    :class="maskTool === tool.value ? 'btn-primary' : 'btn-secondary'"
+                    @click="setMaskTool(tool.value)"
+                  >
+                    {{ tool.label }}
+                  </button>
+                  <div class="flex min-w-[180px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300">
+                    <span class="whitespace-nowrap">{{ t('imageGeneration.form.brushSize') }}</span>
+                    <input
+                      v-model.number="maskBrushSize"
+                      type="range"
+                      min="4"
+                      max="120"
+                      step="1"
+                      class="min-w-0 flex-1 accent-primary-600"
+                    />
+                    <span class="w-8 text-right">{{ maskBrushSize }}</span>
+                  </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    :disabled="maskUndoStackSize === 0"
+                    @click="undoMaskDrawing"
+                  >
+                    <Icon name="refresh" size="sm" class="mr-1.5" />
+                    {{ t('imageGeneration.form.undoMask') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm text-red-600 dark:text-red-400"
+                    :disabled="!maskHasDrawing"
+                    @click="clearMaskDrawing"
+                  >
+                    <Icon name="trash" size="sm" class="mr-1.5" />
+                    {{ t('imageGeneration.form.clearMask') }}
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary btn-sm"
+                    :disabled="!maskHasDrawing"
+                    @click="previewMask"
+                  >
+                    <Icon name="eye" size="sm" class="mr-1.5" />
+                    {{ t('imageGeneration.form.previewMask') }}
+                  </button>
+                </div>
+
+                <div class="relative mx-auto w-full max-w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-600 dark:bg-dark-900">
+                  <canvas
+                    ref="maskBaseCanvasRef"
+                    :width="maskCanvasWidth"
+                    :height="maskCanvasHeight"
+                    class="block h-auto w-full"
+                  />
+                  <canvas
+                    ref="maskDrawingCanvasRef"
+                    :width="maskCanvasWidth"
+                    :height="maskCanvasHeight"
+                    class="absolute inset-0 h-full w-full touch-none cursor-crosshair"
+                    @pointerdown="handleMaskPointerDown"
+                    @pointermove="handleMaskPointerMove"
+                    @pointerup="handleMaskPointerUp"
+                    @pointercancel="handleMaskPointerUp"
+                    @pointerleave="handleMaskPointerLeave"
+                  />
                 </div>
               </div>
+            </Teleport>
+
+            <div
+              v-if="mode === 'mask' && !primarySourceImage"
+              class="rounded-2xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
+            >
+              {{ t('imageGeneration.form.maskEditorNeedsSource') }}
             </div>
           </div>
 
@@ -456,7 +516,7 @@
                 <button
                   type="button"
                   class="block w-full bg-gray-50 dark:bg-dark-900/20"
-                  @click="previewImageUrl = image.url"
+                  @click="openPreview(image.url, image.fileName)"
                 >
                   <img
                     :src="image.url"
@@ -507,7 +567,7 @@
                     <button
                       type="button"
                       class="btn btn-secondary btn-sm"
-                      @click="previewImageUrl = image.url"
+                      @click="openPreview(image.url, image.fileName)"
                     >
                       <Icon name="eye" size="sm" class="mr-1.5" />
                       {{ t('imageGeneration.result.preview') }}
@@ -610,33 +670,50 @@
           <div
             v-if="previewImageUrl"
             class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
-            @click.self="previewImageUrl = ''"
+            @click.self="closePreview"
           >
             <button
               type="button"
               class="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white transition-colors hover:bg-black/70"
-              @click="previewImageUrl = ''"
+              @click="closePreview"
             >
               <Icon name="x" size="lg" />
             </button>
+            <div
+              v-if="previewImageTitle"
+              class="absolute left-4 top-4 max-w-[calc(100vw-6rem)] truncate rounded-full bg-black/50 px-3 py-1 text-sm text-white"
+            >
+              {{ previewImageTitle }}
+            </div>
             <img
               :src="previewImageUrl"
-              alt="preview"
+              :alt="previewImageTitle || 'preview'"
               class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
             />
           </div>
         </Transition>
       </Teleport>
+
+      <ConfirmDialog
+        :show="clearHistoryConfirmOpen"
+        :title="t('imageGeneration.history.clearConfirmTitle')"
+        :message="t('imageGeneration.history.clearConfirmMessage')"
+        :confirm-text="t('imageGeneration.history.clearConfirmButton')"
+        danger
+        @confirm="confirmClearCachedResult"
+        @cancel="clearHistoryConfirmOpen = false"
+      />
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { keysAPI } from '@/api/keys'
 import type { ApiKey } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Select from '@/components/common/Select.vue'
 import Input from '@/components/common/Input.vue'
@@ -645,7 +722,24 @@ import { Icon } from '@/components/icons'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
-type ImageMode = 'generate' | 'edit'
+type ImageMode = 'generate' | 'edit' | 'mask'
+type MaskTool = 'brush' | 'circle' | 'rectangle' | 'eraser'
+
+interface CanvasPoint {
+  x: number
+  y: number
+}
+
+interface CachedImageGenerationAdvancedSettings {
+  quality: string
+  background: string
+  outputFormat: string
+  moderation: string
+  style: string
+  outputCompression: string
+  partialImages: string
+  advancedOpen: boolean
+}
 
 interface LocalImagePreview {
   id: string
@@ -702,8 +796,16 @@ interface ImagesApiResponse {
 
 const LEGACY_LOCAL_CACHE_KEY = 'sub2api:last-image-generation-result'
 const HISTORY_CACHE_KEY = 'sub2api:image-generation-history'
+const ADVANCED_SETTINGS_CACHE_KEY = 'sub2api:image-generation-advanced-settings'
 const HISTORY_LIMIT = 10
 const FIXED_RESPONSE_FORMAT = 'url'
+const DEFAULT_MODEL = 'gpt-image-2'
+const DEFAULT_SIZE = '1024x1024'
+const DEFAULT_COUNT = '1'
+const DEFAULT_MASK_CANVAS_WIDTH = 1024
+const DEFAULT_MASK_CANVAS_HEIGHT = 1024
+const MAX_UNDO_STACK_SIZE = 20
+const MASK_SCROLL_LOCK_CLASS = 'image-generation-mask-editor-open'
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
@@ -714,12 +816,13 @@ const submitError = ref('')
 const eligibleKeys = ref<ApiKey[]>([])
 const resultImages = ref<ResultImage[]>([])
 const previewImageUrl = ref('')
+const previewImageTitle = ref('')
 const selectedKeyId = ref<number | null>(null)
 const mode = ref<ImageMode>('generate')
 const prompt = ref('')
-const model = ref('gpt-image-2')
-const size = ref('1024x1024')
-const n = ref('1')
+const model = ref(DEFAULT_MODEL)
+const size = ref(DEFAULT_SIZE)
+const n = ref(DEFAULT_COUNT)
 const quality = ref('')
 const background = ref('')
 const outputFormat = ref('')
@@ -729,18 +832,45 @@ const outputCompression = ref('')
 const partialImages = ref('')
 const advancedOpen = ref(false)
 const sourceImagePreviews = ref<LocalImagePreview[]>([])
-const maskImagePreview = ref<LocalImagePreview | null>(null)
 const restoredFromCache = ref(false)
 const lastSavedAt = ref('')
 const imageHistory = ref<ImageGenerationHistoryEntry[]>([])
 const activeHistoryId = ref('')
+const clearHistoryConfirmOpen = ref(false)
+const maskBaseCanvasRef = ref<HTMLCanvasElement | null>(null)
+const maskDrawingCanvasRef = ref<HTMLCanvasElement | null>(null)
+const maskEditorPanelRef = ref<HTMLElement | null>(null)
+const maskTool = ref<MaskTool>('brush')
+const maskBrushSize = ref(36)
+const maskCanvasWidth = ref(DEFAULT_MASK_CANVAS_WIDTH)
+const maskCanvasHeight = ref(DEFAULT_MASK_CANVAS_HEIGHT)
+const maskHasDrawing = ref(false)
+const maskEditorExpanded = ref(false)
+const maskUndoStackSize = ref(0)
 
 let abortController: AbortController | null = null
 let suppressRestoreWatcher = false
+let maskSourceImageElement: HTMLImageElement | null = null
+let maskPointerActive = false
+let maskPointerId: number | null = null
+let maskLastPoint: CanvasPoint | null = null
+let maskShapeStartPoint: CanvasPoint | null = null
+let maskShapeSnapshot: ImageData | null = null
+let maskUndoStack: ImageData[] = []
+let previousBodyOverflow = ''
+let maskPreviewObjectUrl: string | null = null
 
 const modeOptions = computed(() => [
   { value: 'generate', label: t('imageGeneration.form.modeGenerate') },
   { value: 'edit', label: t('imageGeneration.form.modeEdit') },
+  { value: 'mask', label: t('imageGeneration.form.modeMask') },
+])
+
+const maskToolOptions = computed<Array<{ value: MaskTool; label: string }>>(() => [
+  { value: 'brush', label: t('imageGeneration.form.maskToolBrush') },
+  { value: 'circle', label: t('imageGeneration.form.maskToolCircle') },
+  { value: 'rectangle', label: t('imageGeneration.form.maskToolRectangle') },
+  { value: 'eraser', label: t('imageGeneration.form.maskToolEraser') },
 ])
 
 const sizeOptions = computed(() => [
@@ -797,18 +927,39 @@ const selectedKey = computed(() =>
   eligibleKeys.value.find((key) => key.id === selectedKeyId.value) ?? null,
 )
 
+const primarySourceImage = computed(() => sourceImagePreviews.value[0] ?? null)
+
+const sourceImagesHintKey = computed(() =>
+  mode.value === 'mask'
+    ? 'imageGeneration.form.maskSourceImagesHint'
+    : 'imageGeneration.form.sourceImagesHint',
+)
+
 const submitDisabled = computed(() => {
   if (!selectedKey.value || loadingKeys.value) return true
   if (!prompt.value.trim()) return true
   if (submitting.value) return false
-  return mode.value === 'edit' && sourceImagePreviews.value.length === 0
+  return mode.value !== 'generate' && sourceImagePreviews.value.length === 0
 })
 
-const promptPlaceholderKey = computed(() =>
-  mode.value === 'generate'
-    ? 'imageGeneration.form.promptPlaceholder'
-    : 'imageGeneration.form.editPromptPlaceholder',
-)
+const promptPlaceholderKey = computed(() => {
+  if (mode.value === 'generate') return 'imageGeneration.form.promptPlaceholder'
+  if (mode.value === 'mask') return 'imageGeneration.form.maskPromptPlaceholder'
+  return 'imageGeneration.form.editPromptPlaceholder'
+})
+
+const promptHintKey = computed(() => {
+  if (mode.value === 'generate') return 'imageGeneration.form.promptHint'
+  if (mode.value === 'mask') return 'imageGeneration.form.maskPromptHint'
+  return 'imageGeneration.form.editPromptHint'
+})
+
+const maskEditorPanelClass = computed(() => [
+  'space-y-3 rounded-2xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900/95',
+  maskEditorExpanded.value
+    ? 'fixed inset-3 z-[90] flex flex-col overflow-y-auto shadow-2xl sm:inset-6'
+    : '',
+])
 
 const hasDirtyResult = computed(() =>
   resultImages.value.length > 0 || imageHistory.value.length > 0 || restoredFromCache.value,
@@ -831,8 +982,39 @@ watch(mode, (value) => {
   if (value === 'generate') {
     clearLocalPreviews(sourceImagePreviews.value)
     sourceImagePreviews.value = []
-    clearMaskImage()
+    resetMaskEditor()
+    exitMaskEditorFullscreen()
+    return
   }
+  if (value === 'edit') {
+    resetMaskEditor()
+    exitMaskEditorFullscreen()
+    return
+  }
+  if (sourceImagePreviews.value.length > 1) {
+    keepFirstSourceImageOnly(true)
+  }
+  if (primarySourceImage.value) {
+    void loadMaskSourceImage(primarySourceImage.value)
+  }
+})
+
+watch(primarySourceImage, async (preview) => {
+  resetMaskEditor()
+  if (mode.value !== 'mask' || !preview) return
+  await loadMaskSourceImage(preview)
+}, { flush: 'post' })
+
+watch(maskEditorExpanded, (expanded) => {
+  if (expanded) {
+    previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.body.classList.add(MASK_SCROLL_LOCK_CLASS)
+    nextTick(() => renderMaskEditor())
+    return
+  }
+  unlockMaskEditorScroll()
+  nextTick(() => renderMaskEditor())
 })
 
 watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputFormat, moderation, style, outputCompression, partialImages, advancedOpen], () => {
@@ -843,17 +1025,24 @@ watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputF
   activeHistoryId.value = ''
 })
 
+watch([quality, background, outputFormat, moderation, style, outputCompression, partialImages, advancedOpen], () => {
+  persistAdvancedSettings()
+})
+
 onMounted(async () => {
+  restoreAdvancedSettings()
   restoreCachedResult()
+  window.addEventListener('keydown', handleGlobalKeydown)
   await loadEligibleKeys()
 })
 
 onBeforeUnmount(() => {
   cancelGeneration()
+  window.removeEventListener('keydown', handleGlobalKeydown)
   clearLocalPreviews(sourceImagePreviews.value)
-  if (maskImagePreview.value) {
-    URL.revokeObjectURL(maskImagePreview.value.url)
-  }
+  closePreview()
+  resetMaskEditor()
+  exitMaskEditorFullscreen()
 })
 
 async function loadEligibleKeys() {
@@ -895,13 +1084,26 @@ function handleSourceImagesChange(event: Event) {
     return
   }
 
-  const nextItems = files.map((file) => ({
+  const nextItems = files.map(createLocalImagePreview)
+  if (mode.value === 'mask') {
+    clearLocalPreviews(sourceImagePreviews.value)
+    sourceImagePreviews.value = nextItems.slice(0, 1)
+    clearLocalPreviews(nextItems.slice(1))
+    if (files.length > 1) {
+      appStore.showInfo(t('imageGeneration.messages.maskSingleSourceOnly'))
+    }
+  } else {
+    sourceImagePreviews.value = [...sourceImagePreviews.value, ...nextItems]
+  }
+  input.value = ''
+}
+
+function createLocalImagePreview(file: File): LocalImagePreview {
+  return {
     id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
     file,
     url: URL.createObjectURL(file),
-  }))
-  sourceImagePreviews.value = [...sourceImagePreviews.value, ...nextItems]
-  input.value = ''
+  }
 }
 
 function removeSourceImage(id: string) {
@@ -911,43 +1113,28 @@ function removeSourceImage(id: string) {
   sourceImagePreviews.value = sourceImagePreviews.value.filter((item) => item.id !== id)
 }
 
-function handleMaskImageChange(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file || !file.type.startsWith('image/')) {
-    input.value = ''
-    return
-  }
-  if (maskImagePreview.value) {
-    URL.revokeObjectURL(maskImagePreview.value.url)
-  }
-  maskImagePreview.value = {
-    id: `${file.name}-${file.size}-${file.lastModified}`,
-    file,
-    url: URL.createObjectURL(file),
-  }
-  input.value = ''
-}
-
-function clearMaskImage() {
-  if (maskImagePreview.value) {
-    URL.revokeObjectURL(maskImagePreview.value.url)
-    maskImagePreview.value = null
-  }
-}
-
 function clearLocalPreviews(previews: LocalImagePreview[]) {
   for (const preview of previews) {
     URL.revokeObjectURL(preview.url)
   }
 }
 
+function keepFirstSourceImageOnly(showMessage = false) {
+  const firstSourceImage = sourceImagePreviews.value[0]
+  if (!firstSourceImage) return
+  clearLocalPreviews(sourceImagePreviews.value.slice(1))
+  sourceImagePreviews.value = [firstSourceImage]
+  if (showMessage) {
+    appStore.showInfo(t('imageGeneration.messages.maskSingleSourceOnly'))
+  }
+}
+
 function resetForm() {
   mode.value = 'generate'
   prompt.value = ''
-  model.value = 'gpt-image-2'
-  size.value = '1024x1024'
-  n.value = '1'
+  model.value = DEFAULT_MODEL
+  size.value = DEFAULT_SIZE
+  n.value = DEFAULT_COUNT
   quality.value = ''
   background.value = ''
   outputFormat.value = ''
@@ -959,20 +1146,18 @@ function resetForm() {
   submitError.value = ''
   clearLocalPreviews(sourceImagePreviews.value)
   sourceImagePreviews.value = []
-  clearMaskImage()
+  resetMaskEditor()
+  exitMaskEditorFullscreen()
 }
 
 async function submitGeneration() {
+  const validationError = validateGenerationForm()
+  if (validationError) {
+    appStore.showWarning(validationError)
+    return
+  }
   if (!selectedKey.value) {
     appStore.showWarning(t('imageGeneration.errors.keyRequired'))
-    return
-  }
-  if (!prompt.value.trim()) {
-    appStore.showWarning(t('imageGeneration.errors.promptRequired'))
-    return
-  }
-  if (mode.value === 'edit' && sourceImagePreviews.value.length === 0) {
-    appStore.showWarning(t('imageGeneration.errors.sourceImagesRequired'))
     return
   }
 
@@ -984,7 +1169,7 @@ async function submitGeneration() {
     const endpoint = mode.value === 'generate'
       ? '/v1/images/generations'
       : '/v1/images/edits'
-    const request = buildRequestInit(selectedKey.value.key)
+    const request = await buildRequestInit(selectedKey.value.key)
     const response = await fetch(endpoint, {
       ...request,
       signal: abortController.signal,
@@ -1029,7 +1214,35 @@ function cancelGeneration() {
   submitting.value = false
 }
 
-function buildRequestInit(apiKey: string) {
+function validateGenerationForm(): string {
+  if (!selectedKey.value) return t('imageGeneration.errors.keyRequired')
+  if (!prompt.value.trim()) return t('imageGeneration.errors.promptRequired')
+  if (mode.value !== 'generate' && sourceImagePreviews.value.length === 0) {
+    return t(mode.value === 'mask'
+      ? 'imageGeneration.errors.maskSourceImageRequired'
+      : 'imageGeneration.errors.sourceImagesRequired')
+  }
+  if (mode.value === 'mask' && !maskHasDrawing.value) {
+    return t('imageGeneration.errors.maskDrawingRequired')
+  }
+
+  const imageCount = parseIntegerString(n.value)
+  if (imageCount === null || imageCount < 1 || imageCount > 10) {
+    return t('imageGeneration.errors.countRange')
+  }
+
+  const compressionValue = outputCompression.value.trim()
+  if (compressionValue) {
+    const compression = parseIntegerString(compressionValue)
+    if (compression === null || compression < 0 || compression > 100) {
+      return t('imageGeneration.errors.outputCompressionRange')
+    }
+  }
+
+  return ''
+}
+
+async function buildRequestInit(apiKey: string) {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
   }
@@ -1039,11 +1252,11 @@ function buildRequestInit(apiKey: string) {
     return {
       method: 'POST',
       headers,
-      body: JSON.stringify(buildJsonPayload()),
+    body: JSON.stringify(buildJsonPayload()),
     }
   }
 
-  const formData = buildEditFormData()
+  const formData = await buildEditFormData()
   return {
     method: 'POST',
     headers,
@@ -1054,7 +1267,7 @@ function buildRequestInit(apiKey: string) {
 function buildJsonPayload() {
   const payload: Record<string, string | number | boolean> = {
     prompt: prompt.value.trim(),
-    model: model.value.trim() || 'gpt-image-2',
+    model: model.value.trim() || DEFAULT_MODEL,
     response_format: FIXED_RESPONSE_FORMAT,
     stream: false,
   }
@@ -1068,8 +1281,8 @@ function buildJsonPayload() {
   if (moderation.value) payload.moderation = moderation.value
   if (style.value) payload.style = style.value
 
-  const compression = normalizePositiveInt(outputCompression.value)
-  if (compression > 0) payload.output_compression = compression
+  const compression = normalizeNonNegativeInt(outputCompression.value)
+  if (compression !== null) payload.output_compression = compression
 
   const partial = normalizePositiveInt(partialImages.value)
   if (partial > 0) payload.partial_images = partial
@@ -1077,10 +1290,10 @@ function buildJsonPayload() {
   return payload
 }
 
-function buildEditFormData() {
+async function buildEditFormData() {
   const formData = new FormData()
   formData.append('prompt', prompt.value.trim())
-  formData.append('model', model.value.trim() || 'gpt-image-2')
+  formData.append('model', model.value.trim() || DEFAULT_MODEL)
   formData.append('response_format', FIXED_RESPONSE_FORMAT)
   formData.append('stream', 'false')
 
@@ -1093,27 +1306,363 @@ function buildEditFormData() {
   if (moderation.value) formData.append('moderation', moderation.value)
   if (style.value) formData.append('style', style.value)
 
-  const compression = normalizePositiveInt(outputCompression.value)
-  if (compression > 0) formData.append('output_compression', String(compression))
+  const compression = normalizeNonNegativeInt(outputCompression.value)
+  if (compression !== null) formData.append('output_compression', String(compression))
 
   const partial = normalizePositiveInt(partialImages.value)
   if (partial > 0) formData.append('partial_images', String(partial))
 
-  for (const item of sourceImagePreviews.value) {
+  const imagesToSubmit = mode.value === 'mask'
+    ? sourceImagePreviews.value.slice(0, 1)
+    : sourceImagePreviews.value
+  for (const item of imagesToSubmit) {
     formData.append('image', item.file, item.file.name)
   }
-  if (maskImagePreview.value) {
-    formData.append('mask', maskImagePreview.value.file, maskImagePreview.value.file.name)
+
+  if (mode.value === 'mask') {
+    const maskBlob = await exportMaskBlob()
+    formData.append('mask', maskBlob, 'mask.png')
   }
   return formData
 }
 
 function normalizePositiveInt(value: string): number {
-  const parsed = Number.parseInt(value, 10)
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  const parsed = parseIntegerString(value)
+  if (parsed === null || parsed <= 0) {
     return 0
   }
   return parsed
+}
+
+function normalizeNonNegativeInt(value: string): number | null {
+  if (!value.trim()) return null
+  const parsed = parseIntegerString(value)
+  if (parsed === null || parsed < 0) {
+    return null
+  }
+  return parsed
+}
+
+function parseIntegerString(value: string): number | null {
+  const normalized = value.trim()
+  if (!/^-?\d+$/.test(normalized)) return null
+  const parsed = Number.parseInt(normalized, 10)
+  return Number.isSafeInteger(parsed) ? parsed : null
+}
+
+async function loadMaskSourceImage(preview: LocalImagePreview) {
+  try {
+    const image = await loadImageElement(preview.url)
+    if (primarySourceImage.value?.id !== preview.id || mode.value !== 'mask') return
+    maskSourceImageElement = image
+    maskCanvasWidth.value = image.naturalWidth || DEFAULT_MASK_CANVAS_WIDTH
+    maskCanvasHeight.value = image.naturalHeight || DEFAULT_MASK_CANVAS_HEIGHT
+    await nextTick()
+    renderMaskEditor()
+  } catch {
+    appStore.showError(t('imageGeneration.errors.maskSourceLoadFailed'))
+  }
+}
+
+function loadImageElement(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Failed to load image'))
+    image.src = url
+  })
+}
+
+function renderMaskEditor() {
+  renderMaskBaseCanvas()
+  renderMaskDrawingCanvas()
+}
+
+function renderMaskBaseCanvas() {
+  const canvas = maskBaseCanvasRef.value
+  const image = maskSourceImageElement
+  if (!canvas || !image) return
+
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+}
+
+function renderMaskDrawingCanvas() {
+  const canvas = maskDrawingCanvasRef.value
+  if (!canvas) return
+
+  const context = canvas.getContext('2d')
+  if (!context) return
+  if (!maskHasDrawing.value) {
+    context.clearRect(0, 0, canvas.width, canvas.height)
+  }
+}
+
+function handleMaskPointerDown(event: PointerEvent) {
+  const canvas = maskDrawingCanvasRef.value
+  if (!canvas) return
+
+  event.preventDefault()
+  const point = getCanvasPoint(event, canvas)
+  maskPointerActive = true
+  maskPointerId = event.pointerId
+  maskLastPoint = point
+  canvas.setPointerCapture(event.pointerId)
+  pushMaskUndoSnapshot()
+
+  if (maskTool.value === 'brush' || maskTool.value === 'eraser') {
+    drawMaskLine(point, point)
+    maskHasDrawing.value = hasMaskPixels()
+    return
+  }
+
+  const context = canvas.getContext('2d')
+  if (!context) return
+  maskShapeStartPoint = point
+  maskShapeSnapshot = context.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+function handleMaskPointerMove(event: PointerEvent) {
+  if (!maskPointerActive || event.pointerId !== maskPointerId) return
+  const canvas = maskDrawingCanvasRef.value
+  if (!canvas) return
+
+  event.preventDefault()
+  const point = getCanvasPoint(event, canvas)
+  if (maskTool.value === 'brush' || maskTool.value === 'eraser') {
+    drawMaskLine(maskLastPoint ?? point, point)
+    maskLastPoint = point
+    maskHasDrawing.value = hasMaskPixels()
+    return
+  }
+  drawMaskShapePreview(point)
+}
+
+function handleMaskPointerUp(event: PointerEvent) {
+  if (!maskPointerActive || event.pointerId !== maskPointerId) return
+  const canvas = maskDrawingCanvasRef.value
+  if (!canvas) return
+
+  event.preventDefault()
+  if (maskTool.value === 'circle' || maskTool.value === 'rectangle') {
+    drawMaskShapePreview(getCanvasPoint(event, canvas))
+  }
+  finishMaskPointer(canvas, event.pointerId)
+}
+
+function handleMaskPointerLeave(event: PointerEvent) {
+  if (!maskPointerActive || event.pointerId !== maskPointerId) return
+  if (event.buttons !== 0) return
+  const canvas = maskDrawingCanvasRef.value
+  if (!canvas) return
+  finishMaskPointer(canvas, event.pointerId)
+}
+
+function finishMaskPointer(canvas: HTMLCanvasElement, pointerId: number) {
+  if (canvas.hasPointerCapture(pointerId)) {
+    canvas.releasePointerCapture(pointerId)
+  }
+  maskPointerActive = false
+  maskPointerId = null
+  maskLastPoint = null
+  maskShapeStartPoint = null
+  maskShapeSnapshot = null
+  maskHasDrawing.value = hasMaskPixels()
+}
+
+function getCanvasPoint(event: PointerEvent, canvas: HTMLCanvasElement): CanvasPoint {
+  const rect = canvas.getBoundingClientRect()
+  const scaleX = rect.width > 0 ? canvas.width / rect.width : 1
+  const scaleY = rect.height > 0 ? canvas.height / rect.height : 1
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY,
+  }
+}
+
+function drawMaskLine(from: CanvasPoint, to: CanvasPoint) {
+  const canvas = maskDrawingCanvasRef.value
+  const context = canvas?.getContext('2d')
+  if (!canvas || !context) return
+
+  context.save()
+  context.lineCap = 'round'
+  context.lineJoin = 'round'
+  context.lineWidth = maskBrushSize.value
+  if (maskTool.value === 'eraser') {
+    context.globalCompositeOperation = 'destination-out'
+    context.strokeStyle = 'rgba(0, 0, 0, 1)'
+  } else {
+    context.globalCompositeOperation = 'source-over'
+    context.strokeStyle = 'rgba(239, 68, 68, 0.68)'
+  }
+  context.beginPath()
+  context.moveTo(from.x, from.y)
+  context.lineTo(to.x, to.y)
+  context.stroke()
+  context.restore()
+}
+
+function drawMaskShapePreview(currentPoint: CanvasPoint) {
+  const canvas = maskDrawingCanvasRef.value
+  const context = canvas?.getContext('2d')
+  if (!canvas || !context || !maskShapeStartPoint || !maskShapeSnapshot) return
+
+  context.putImageData(maskShapeSnapshot, 0, 0)
+  context.save()
+  context.fillStyle = 'rgba(239, 68, 68, 0.68)'
+  if (maskTool.value === 'rectangle') {
+    context.fillRect(
+      maskShapeStartPoint.x,
+      maskShapeStartPoint.y,
+      currentPoint.x - maskShapeStartPoint.x,
+      currentPoint.y - maskShapeStartPoint.y,
+    )
+  } else {
+    const radius = Math.hypot(currentPoint.x - maskShapeStartPoint.x, currentPoint.y - maskShapeStartPoint.y)
+    context.beginPath()
+    context.arc(maskShapeStartPoint.x, maskShapeStartPoint.y, radius, 0, Math.PI * 2)
+    context.fill()
+  }
+  context.restore()
+}
+
+function pushMaskUndoSnapshot() {
+  const canvas = maskDrawingCanvasRef.value
+  const context = canvas?.getContext('2d')
+  if (!canvas || !context) return
+
+  maskUndoStack.push(context.getImageData(0, 0, canvas.width, canvas.height))
+  if (maskUndoStack.length > MAX_UNDO_STACK_SIZE) {
+    maskUndoStack = maskUndoStack.slice(maskUndoStack.length - MAX_UNDO_STACK_SIZE)
+  }
+  maskUndoStackSize.value = maskUndoStack.length
+}
+
+function undoMaskDrawing() {
+  const canvas = maskDrawingCanvasRef.value
+  const context = canvas?.getContext('2d')
+  const snapshot = maskUndoStack.pop()
+  if (!canvas || !context || !snapshot) return
+
+  context.putImageData(snapshot, 0, 0)
+  maskUndoStackSize.value = maskUndoStack.length
+  maskHasDrawing.value = hasMaskPixels()
+}
+
+function clearMaskDrawing() {
+  const canvas = maskDrawingCanvasRef.value
+  const context = canvas?.getContext('2d')
+  if (!canvas || !context) return
+
+  pushMaskUndoSnapshot()
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  maskHasDrawing.value = false
+}
+
+function hasMaskPixels(): boolean {
+  const canvas = maskDrawingCanvasRef.value
+  const context = canvas?.getContext('2d', { willReadFrequently: true })
+  if (!canvas || !context) return false
+
+  const data = context.getImageData(0, 0, canvas.width, canvas.height).data
+  for (let index = 3; index < data.length; index += 4) {
+    if (data[index] > 0) return true
+  }
+  return false
+}
+
+async function previewMask() {
+  try {
+    const blob = await exportMaskBlob()
+    if (maskPreviewObjectUrl) {
+      URL.revokeObjectURL(maskPreviewObjectUrl)
+    }
+    maskPreviewObjectUrl = URL.createObjectURL(blob)
+    openPreview(maskPreviewObjectUrl, t('imageGeneration.form.maskPreviewTitle'))
+  } catch (error: unknown) {
+    appStore.showError(extractApiErrorMessage(error, t('imageGeneration.errors.maskExportFailed')))
+  }
+}
+
+async function exportMaskBlob(): Promise<Blob> {
+  const drawingCanvas = maskDrawingCanvasRef.value
+  if (!drawingCanvas) {
+    throw new Error(t('imageGeneration.errors.maskNotReady'))
+  }
+
+  const maskCanvas = document.createElement('canvas')
+  maskCanvas.width = drawingCanvas.width
+  maskCanvas.height = drawingCanvas.height
+  const maskContext = maskCanvas.getContext('2d')
+  const drawingContext = drawingCanvas.getContext('2d', { willReadFrequently: true })
+  if (!maskContext || !drawingContext) {
+    throw new Error(t('imageGeneration.errors.maskNotReady'))
+  }
+
+  maskContext.fillStyle = '#ffffff'
+  maskContext.fillRect(0, 0, maskCanvas.width, maskCanvas.height)
+  const drawingData = drawingContext.getImageData(0, 0, drawingCanvas.width, drawingCanvas.height)
+  const maskData = maskContext.getImageData(0, 0, maskCanvas.width, maskCanvas.height)
+  for (let index = 0; index < drawingData.data.length; index += 4) {
+    if (drawingData.data[index + 3] > 0) {
+      maskData.data[index + 3] = 0
+    }
+  }
+  maskContext.putImageData(maskData, 0, 0)
+
+  return new Promise((resolve, reject) => {
+    maskCanvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob)
+      } else {
+        reject(new Error(t('imageGeneration.errors.maskExportFailed')))
+      }
+    }, 'image/png')
+  })
+}
+
+function resetMaskEditor() {
+  const canvas = maskDrawingCanvasRef.value
+  const context = canvas?.getContext('2d')
+  if (canvas && context) {
+    context.clearRect(0, 0, canvas.width, canvas.height)
+  }
+  maskSourceImageElement = null
+  maskPointerActive = false
+  maskPointerId = null
+  maskLastPoint = null
+  maskShapeStartPoint = null
+  maskShapeSnapshot = null
+  maskUndoStack = []
+  maskUndoStackSize.value = 0
+  maskHasDrawing.value = false
+  maskCanvasWidth.value = DEFAULT_MASK_CANVAS_WIDTH
+  maskCanvasHeight.value = DEFAULT_MASK_CANVAS_HEIGHT
+}
+
+function toggleMaskEditorFullscreen() {
+  maskEditorExpanded.value = !maskEditorExpanded.value
+}
+
+function setMaskTool(tool: MaskTool) {
+  maskTool.value = tool
+}
+
+function exitMaskEditorFullscreen() {
+  if (!maskEditorExpanded.value) {
+    unlockMaskEditorScroll()
+    return
+  }
+  maskEditorExpanded.value = false
+  unlockMaskEditorScroll()
+}
+
+function unlockMaskEditorScroll() {
+  document.body.style.overflow = previousBodyOverflow
+  document.body.classList.remove(MASK_SCROLL_LOCK_CLASS)
 }
 
 function extractImagesErrorMessage(responseText: string, status: number): string {
@@ -1253,6 +1802,10 @@ function restoreCachedResult() {
 }
 
 function clearCachedResult() {
+  clearHistoryConfirmOpen.value = true
+}
+
+function confirmClearCachedResult() {
   localStorage.removeItem(HISTORY_CACHE_KEY)
   localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY)
   imageHistory.value = []
@@ -1261,6 +1814,7 @@ function clearCachedResult() {
   restoredFromCache.value = false
   submitError.value = ''
   lastSavedAt.value = ''
+  clearHistoryConfirmOpen.value = false
   appStore.showSuccess(t('imageGeneration.messages.cacheCleared'))
 }
 
@@ -1339,12 +1893,13 @@ function normalizeCachedResult(value: unknown): CachedImageGenerationResult | nu
 }
 
 function normalizeCachedForm(value: Record<string, unknown>): CachedImageGenerationForm {
+  const storedMode = stringValue(value.mode)
   return {
-    mode: value.mode === 'edit' ? 'edit' : 'generate',
+    mode: storedMode === 'edit' || storedMode === 'mask' ? storedMode : 'generate',
     prompt: stringValue(value.prompt),
-    model: stringValue(value.model) || 'gpt-image-2',
-    size: stringValue(value.size) || '1024x1024',
-    n: stringValue(value.n) || '1',
+    model: stringValue(value.model) || DEFAULT_MODEL,
+    size: stringValue(value.size) || DEFAULT_SIZE,
+    n: stringValue(value.n) || DEFAULT_COUNT,
     quality: stringValue(value.quality),
     background: stringValue(value.background),
     outputFormat: stringValue(value.outputFormat),
@@ -1398,7 +1953,8 @@ function restoreHistoryEntry(entry: ImageGenerationHistoryEntry) {
   suppressRestoreWatcher = true
   clearLocalPreviews(sourceImagePreviews.value)
   sourceImagePreviews.value = []
-  clearMaskImage()
+  resetMaskEditor()
+  exitMaskEditorFullscreen()
   selectedKeyId.value = entry.selectedKeyId
   mode.value = entry.form.mode
   prompt.value = entry.form.prompt
@@ -1434,8 +1990,10 @@ function formatHistoryTime(value: string): string {
 function formatHistoryMeta(entry: ImageGenerationHistoryEntry): string {
   const modeLabel = entry.form.mode === 'generate'
     ? t('imageGeneration.form.modeGenerate')
-    : t('imageGeneration.form.modeEdit')
-  const modelLabel = entry.form.model || 'gpt-image-2'
+    : entry.form.mode === 'mask'
+      ? t('imageGeneration.form.modeMask')
+      : t('imageGeneration.form.modeEdit')
+  const modelLabel = entry.form.model || DEFAULT_MODEL
   const sizeLabel = entry.form.size === 'auto'
     ? t('imageGeneration.form.sizeAuto')
     : entry.form.size || t('imageGeneration.form.sizeAuto')
@@ -1449,13 +2007,119 @@ function formatHistoryMeta(entry: ImageGenerationHistoryEntry): string {
 async function copyAllImageLinks() {
   const content = resultImages.value.map((image) => image.url).join('\n')
   if (!content) return
-  await navigator.clipboard.writeText(content)
-  appStore.showSuccess(t('imageGeneration.messages.linksCopied'))
+  try {
+    await writeClipboardText(content)
+    appStore.showSuccess(t('imageGeneration.messages.linksCopied'))
+  } catch (error: unknown) {
+    appStore.showError(extractApiErrorMessage(error, t('imageGeneration.errors.copyFailed')))
+  }
 }
 
 async function copyImageLink(image: ResultImage) {
-  await navigator.clipboard.writeText(image.url)
-  appStore.showSuccess(t('imageGeneration.messages.linkCopied'))
+  try {
+    await writeClipboardText(image.url)
+    appStore.showSuccess(t('imageGeneration.messages.linkCopied'))
+  } catch (error: unknown) {
+    appStore.showError(extractApiErrorMessage(error, t('imageGeneration.errors.copyFailed')))
+  }
+}
+
+async function writeClipboardText(content: string) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(content)
+      return
+    }
+  } catch {
+    // fallback below
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = content
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textarea)
+  if (!copied) {
+    throw new Error(t('imageGeneration.errors.copyFailed'))
+  }
+}
+
+function openPreview(url: string, title = '') {
+  previewImageUrl.value = url
+  previewImageTitle.value = title
+}
+
+function closePreview() {
+  const closedUrl = previewImageUrl.value
+  previewImageUrl.value = ''
+  previewImageTitle.value = ''
+  if (maskPreviewObjectUrl && closedUrl === maskPreviewObjectUrl) {
+    URL.revokeObjectURL(maskPreviewObjectUrl)
+    maskPreviewObjectUrl = null
+  }
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  if (previewImageUrl.value) {
+    closePreview()
+    return
+  }
+  if (maskEditorExpanded.value) {
+    exitMaskEditorFullscreen()
+  }
+}
+
+function restoreAdvancedSettings() {
+  const raw = localStorage.getItem(ADVANCED_SETTINGS_CACHE_KEY)
+  if (!raw) return
+
+  try {
+    const parsed = normalizeAdvancedSettings(JSON.parse(raw))
+    if (!parsed) return
+    quality.value = parsed.quality
+    background.value = parsed.background
+    outputFormat.value = parsed.outputFormat
+    moderation.value = parsed.moderation
+    style.value = parsed.style
+    outputCompression.value = parsed.outputCompression
+    partialImages.value = parsed.partialImages
+    advancedOpen.value = parsed.advancedOpen
+  } catch {
+    localStorage.removeItem(ADVANCED_SETTINGS_CACHE_KEY)
+  }
+}
+
+function persistAdvancedSettings() {
+  const payload: CachedImageGenerationAdvancedSettings = {
+    quality: quality.value,
+    background: background.value,
+    outputFormat: outputFormat.value,
+    moderation: moderation.value,
+    style: style.value,
+    outputCompression: outputCompression.value,
+    partialImages: partialImages.value,
+    advancedOpen: advancedOpen.value,
+  }
+  localStorage.setItem(ADVANCED_SETTINGS_CACHE_KEY, JSON.stringify(payload))
+}
+
+function normalizeAdvancedSettings(value: unknown): CachedImageGenerationAdvancedSettings | null {
+  if (!isRecord(value)) return null
+  return {
+    quality: stringValue(value.quality),
+    background: stringValue(value.background),
+    outputFormat: stringValue(value.outputFormat),
+    moderation: stringValue(value.moderation),
+    style: stringValue(value.style),
+    outputCompression: stringValue(value.outputCompression),
+    partialImages: stringValue(value.partialImages),
+    advancedOpen: value.advancedOpen === true,
+  }
 }
 
 async function downloadAllImages() {
