@@ -1,8 +1,8 @@
 <template>
   <AppLayout>
-    <div class="w-full space-y-4">
-      <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(320px,380px)_minmax(0,1fr)_minmax(260px,300px)]">
-        <section class="card space-y-4 p-4">
+    <div class="w-full xl:h-[calc(100vh-8rem)] xl:min-h-0 xl:overflow-hidden">
+      <div class="grid grid-cols-1 gap-3 xl:h-full xl:min-h-0 xl:grid-cols-[minmax(300px,360px)_minmax(0,1fr)_minmax(240px,280px)]">
+        <section class="card space-y-3 p-3 xl:h-full xl:min-h-0 xl:overflow-y-auto">
           <div class="space-y-1.5">
             <label class="input-label">{{ t('imageGeneration.form.apiKey') }}</label>
             <Select
@@ -55,7 +55,7 @@
             :placeholder="t(promptPlaceholderKey)"
             :hint="t(promptHintKey)"
             :disabled="submitting"
-            rows="4"
+            rows="3"
           />
 
           <div
@@ -66,7 +66,7 @@
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <div class="text-sm font-medium text-gray-900 dark:text-white">
-                    {{ t('imageGeneration.form.sourceImages') }}
+                    {{ t(sourceImagesLabelKey) }}
                   </div>
                   <p class="text-xs text-gray-500 dark:text-gray-400">
                     {{ t(sourceImagesHintKey) }}
@@ -76,7 +76,7 @@
                   <input
                     type="file"
                     accept="image/*"
-                    multiple
+                    :multiple="mode === 'edit'"
                     class="hidden"
                     :disabled="submitting"
                     @change="handleSourceImagesChange"
@@ -98,7 +98,7 @@
                   <img
                     :src="preview.url"
                     :alt="preview.file.name"
-                    class="h-28 w-full cursor-pointer object-cover"
+                    class="h-20 w-full cursor-pointer object-cover"
                     @click="openPreview(preview.url, preview.file.name)"
                   />
                   <div class="flex items-center justify-between gap-2 border-t border-gray-100 px-3 py-2 text-xs dark:border-dark-600">
@@ -160,7 +160,7 @@
                   >
                     {{ tool.label }}
                   </button>
-                  <div class="flex min-w-[180px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300">
+                  <div class="flex min-w-[180px] items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300">
                     <span class="whitespace-nowrap">{{ t('imageGeneration.form.brushSize') }}</span>
                     <input
                       v-model.number="maskBrushSize"
@@ -228,13 +228,13 @@
 
             <div
               v-if="mode === 'mask' && !primarySourceImage"
-              class="rounded-2xl border border-dashed border-gray-300 px-4 py-6 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
+              class="rounded-2xl border border-dashed border-gray-300 px-4 py-4 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
             >
               {{ t('imageGeneration.form.maskEditorNeedsSource') }}
             </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div class="space-y-1.5">
               <label class="input-label">{{ t('imageGeneration.form.size') }}</label>
               <Select
@@ -250,6 +250,9 @@
                 v-model="n"
                 type="number"
                 :disabled="submitting"
+                min="1"
+                max="10"
+                step="1"
                 placeholder="1"
               />
             </div>
@@ -279,7 +282,7 @@
 
             <div
               v-if="advancedOpen"
-              class="grid grid-cols-1 gap-4 border-t border-gray-100 px-4 py-4 sm:grid-cols-2 dark:border-dark-700"
+              class="grid grid-cols-1 gap-3 border-t border-gray-100 px-4 py-3 sm:grid-cols-2 dark:border-dark-700"
             >
               <div class="space-y-1.5">
                 <label class="input-label">{{ t('imageGeneration.form.quality') }}</label>
@@ -309,74 +312,26 @@
               </div>
 
               <div class="space-y-1.5">
-                <label class="input-label">{{ t('imageGeneration.form.style') }}</label>
-                <Select
-                  v-model="style"
-                  :options="styleOptions"
-                  :disabled="submitting"
-                />
-              </div>
-
-              <div class="space-y-1.5">
-                <div class="mb-1.5 flex items-center gap-1">
-                  <label class="input-label mb-0">{{ t('imageGeneration.form.moderation') }}</label>
-                  <HelpTooltip :content="t('imageGeneration.form.moderationHelp')">
-                    <template #trigger>
-                      <Icon
-                        name="questionCircle"
-                        size="sm"
-                        :stroke-width="2"
-                        class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
-                      />
-                    </template>
-                  </HelpTooltip>
-                </div>
-                <Select
-                  v-model="moderation"
-                  :options="moderationOptions"
-                  :disabled="submitting"
-                />
-              </div>
-
-              <div class="space-y-1.5">
-                <div class="mb-1.5 flex items-center gap-1">
-                  <label class="input-label mb-0">{{ t('imageGeneration.form.outputCompression') }}</label>
-                  <HelpTooltip :content="t('imageGeneration.form.outputCompressionHelp')">
-                    <template #trigger>
-                      <Icon
-                        name="questionCircle"
-                        size="sm"
-                        :stroke-width="2"
-                        class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
-                      />
-                    </template>
-                  </HelpTooltip>
-                </div>
-                <Input
+                <label class="input-label">{{ t('imageGeneration.form.outputCompression') }}</label>
+                <input
                   v-model="outputCompression"
                   type="number"
+                  min="0"
+                  max="100"
+                  class="input w-full transition-all duration-200"
                   :placeholder="t('imageGeneration.form.outputCompressionPlaceholder')"
                   :disabled="submitting"
                 />
               </div>
 
               <div class="space-y-1.5">
-                <div class="mb-1.5 flex items-center gap-1">
-                  <label class="input-label mb-0">{{ t('imageGeneration.form.partialImages') }}</label>
-                  <HelpTooltip :content="t('imageGeneration.form.partialImagesHelp')">
-                    <template #trigger>
-                      <Icon
-                        name="questionCircle"
-                        size="sm"
-                        :stroke-width="2"
-                        class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
-                      />
-                    </template>
-                  </HelpTooltip>
-                </div>
-                <Input
+                <label class="input-label">{{ t('imageGeneration.form.partialImages') }}</label>
+                <input
                   v-model="partialImages"
                   type="number"
+                  min="0"
+                  max="3"
+                  class="input w-full transition-all duration-200"
                   :placeholder="t('imageGeneration.form.partialImagesPlaceholder')"
                   :disabled="submitting"
                 />
@@ -419,7 +374,7 @@
           </div>
         </section>
 
-        <section class="card min-h-[440px] space-y-4 p-4">
+        <section class="card min-h-[360px] space-y-3 p-3 xl:h-full xl:min-h-0 xl:overflow-y-auto">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -455,7 +410,7 @@
 
           <div
             v-if="submitting"
-            class="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-primary-200 bg-primary-50/60 px-6 py-10 text-center dark:border-primary-800 dark:bg-primary-900/10"
+            class="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-primary-200 bg-primary-50/60 px-6 py-8 text-center dark:border-primary-800 dark:bg-primary-900/10"
           >
             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
               <Icon name="refresh" size="lg" class="animate-spin" />
@@ -472,7 +427,7 @@
 
           <div
             v-else-if="submitError"
-            class="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-2xl border border-red-200 bg-red-50 px-6 py-10 text-center dark:border-red-500/20 dark:bg-red-500/10"
+            class="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-2xl border border-red-200 bg-red-50 px-6 py-8 text-center dark:border-red-500/20 dark:bg-red-500/10"
           >
             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-500 dark:bg-red-500/20 dark:text-red-300">
               <Icon name="x" size="lg" />
@@ -489,7 +444,7 @@
 
           <div
             v-else-if="resultImages.length === 0"
-            class="flex min-h-[320px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-10 text-center dark:border-dark-600 dark:bg-dark-900/30"
+            class="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-6 py-8 text-center dark:border-dark-600 dark:bg-dark-900/30"
           >
             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-dark-800 dark:text-gray-300">
               <Icon name="sparkles" size="lg" />
@@ -579,7 +534,7 @@
           </div>
         </section>
 
-        <section class="card space-y-4 p-4">
+        <section class="card space-y-3 p-3 xl:h-full xl:min-h-0 xl:overflow-y-auto">
           <div class="flex items-start justify-between gap-3">
             <div>
               <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
@@ -596,7 +551,7 @@
 
           <div
             v-if="imageHistory.length === 0"
-            class="flex min-h-[220px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-8 text-center dark:border-dark-600 dark:bg-dark-900/30"
+            class="flex min-h-[180px] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center dark:border-dark-600 dark:bg-dark-900/30"
           >
             <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500 dark:bg-dark-800 dark:text-gray-300">
               <Icon name="clock" size="lg" />
@@ -650,7 +605,7 @@
                   <img
                     :src="image.url"
                     :alt="`history-image-${index + 1}`"
-                    class="h-14 w-full object-cover"
+                    class="h-12 w-full object-cover"
                   />
                   <div
                     v-if="index === 3 && entry.results.length > 4"
@@ -714,7 +669,6 @@ import { keysAPI } from '@/api/keys'
 import type { ApiKey } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Select from '@/components/common/Select.vue'
 import Input from '@/components/common/Input.vue'
 import TextArea from '@/components/common/TextArea.vue'
@@ -734,8 +688,6 @@ interface CachedImageGenerationAdvancedSettings {
   quality: string
   background: string
   outputFormat: string
-  moderation: string
-  style: string
   outputCompression: string
   partialImages: string
   advancedOpen: boolean
@@ -763,8 +715,6 @@ interface CachedImageGenerationForm {
   quality: string
   background: string
   outputFormat: string
-  moderation: string
-  style: string
   outputCompression: string
   partialImages: string
   advancedOpen: boolean
@@ -826,8 +776,6 @@ const n = ref(DEFAULT_COUNT)
 const quality = ref('')
 const background = ref('')
 const outputFormat = ref('')
-const moderation = ref('')
-const style = ref('')
 const outputCompression = ref('')
 const partialImages = ref('')
 const advancedOpen = ref(false)
@@ -875,43 +823,31 @@ const maskToolOptions = computed<Array<{ value: MaskTool; label: string }>>(() =
 
 const sizeOptions = computed(() => [
   { value: '1024x1024', label: '1024 × 1024' },
-  { value: '1536x1024', label: '1536 × 1024' },
-  { value: '1024x1536', label: '1024 × 1536' },
-  { value: 'auto', label: t('imageGeneration.form.sizeAuto') },
+  { value: '1536x1024', label: t('imageGeneration.form.sizeLandscape') },
+  { value: '1024x1536', label: t('imageGeneration.form.sizePortrait') },
+  { value: 'auto', label: 'auto' },
 ])
 
 const qualityOptions = computed(() => [
-  { value: '', label: t('imageGeneration.form.defaultOption') },
+  { value: '', label: t('imageGeneration.form.defaultAutoOption') },
+  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
   { value: 'low', label: t('imageGeneration.form.qualityLow') },
   { value: 'medium', label: t('imageGeneration.form.qualityMedium') },
   { value: 'high', label: t('imageGeneration.form.qualityHigh') },
-  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
 ])
 
 const backgroundOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'transparent', label: t('imageGeneration.form.backgroundTransparent') },
-  { value: 'opaque', label: t('imageGeneration.form.backgroundOpaque') },
-  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
+  { value: 'transparent', label: 'transparent' },
+  { value: 'opaque', label: 'opaque' },
+  { value: 'auto', label: 'auto' },
 ])
 
 const outputFormatOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'png', label: t('imageGeneration.form.outputFormatPng') },
-  { value: 'jpeg', label: t('imageGeneration.form.outputFormatJpeg') },
-  { value: 'webp', label: t('imageGeneration.form.outputFormatWebp') },
-])
-
-const styleOptions = computed(() => [
-  { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'vivid', label: t('imageGeneration.form.styleVivid') },
-  { value: 'natural', label: t('imageGeneration.form.styleNatural') },
-])
-
-const moderationOptions = computed(() => [
-  { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
-  { value: 'low', label: t('imageGeneration.form.moderationLow') },
+  { value: 'png', label: 'png' },
+  { value: 'jpeg', label: 'jpeg' },
+  { value: 'webp', label: 'webp' },
 ])
 
 const keyOptions = computed(() =>
@@ -933,6 +869,12 @@ const sourceImagesHintKey = computed(() =>
   mode.value === 'mask'
     ? 'imageGeneration.form.maskSourceImagesHint'
     : 'imageGeneration.form.sourceImagesHint',
+)
+
+const sourceImagesLabelKey = computed(() =>
+  mode.value === 'mask'
+    ? 'imageGeneration.form.sourceImagesSingle'
+    : 'imageGeneration.form.sourceImages',
 )
 
 const submitDisabled = computed(() => {
@@ -1017,7 +959,7 @@ watch(maskEditorExpanded, (expanded) => {
   nextTick(() => renderMaskEditor())
 })
 
-watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputFormat, moderation, style, outputCompression, partialImages, advancedOpen], () => {
+watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputFormat, outputCompression, partialImages, advancedOpen], () => {
   if (suppressRestoreWatcher || !restoredFromCache.value || submitting.value) {
     return
   }
@@ -1025,7 +967,7 @@ watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputF
   activeHistoryId.value = ''
 })
 
-watch([quality, background, outputFormat, moderation, style, outputCompression, partialImages, advancedOpen], () => {
+watch([quality, background, outputFormat, outputCompression, partialImages, advancedOpen], () => {
   persistAdvancedSettings()
 })
 
@@ -1130,19 +1072,13 @@ function keepFirstSourceImageOnly(showMessage = false) {
 }
 
 function resetForm() {
+  const cachedAdvancedSettings = readAdvancedSettings()
   mode.value = 'generate'
   prompt.value = ''
   model.value = DEFAULT_MODEL
   size.value = DEFAULT_SIZE
   n.value = DEFAULT_COUNT
-  quality.value = ''
-  background.value = ''
-  outputFormat.value = ''
-  moderation.value = ''
-  style.value = ''
-  outputCompression.value = ''
-  partialImages.value = ''
-  advancedOpen.value = false
+  applyAdvancedSettings(cachedAdvancedSettings ?? createDefaultAdvancedSettings())
   submitError.value = ''
   clearLocalPreviews(sourceImagePreviews.value)
   sourceImagePreviews.value = []
@@ -1239,6 +1175,14 @@ function validateGenerationForm(): string {
     }
   }
 
+  const partialValue = partialImages.value.trim()
+  if (partialValue) {
+    const partial = parseIntegerString(partialValue)
+    if (partial === null || partial < 0 || partial > 3) {
+      return t('imageGeneration.errors.partialImagesRange')
+    }
+  }
+
   return ''
 }
 
@@ -1278,8 +1222,7 @@ function buildJsonPayload() {
   if (quality.value) payload.quality = quality.value
   if (background.value) payload.background = background.value
   if (outputFormat.value) payload.output_format = outputFormat.value
-  if (moderation.value) payload.moderation = moderation.value
-  if (style.value) payload.style = style.value
+  payload.moderation = 'low'
 
   const compression = normalizeNonNegativeInt(outputCompression.value)
   if (compression !== null) payload.output_compression = compression
@@ -1303,8 +1246,7 @@ async function buildEditFormData() {
   if (quality.value) formData.append('quality', quality.value)
   if (background.value) formData.append('background', background.value)
   if (outputFormat.value) formData.append('output_format', outputFormat.value)
-  if (moderation.value) formData.append('moderation', moderation.value)
-  if (style.value) formData.append('style', style.value)
+  formData.append('moderation', 'low')
 
   const compression = normalizeNonNegativeInt(outputCompression.value)
   if (compression !== null) formData.append('output_compression', String(compression))
@@ -1773,8 +1715,6 @@ function captureCurrentForm(): CachedImageGenerationForm {
     quality: quality.value,
     background: background.value,
     outputFormat: outputFormat.value,
-    moderation: moderation.value,
-    style: style.value,
     outputCompression: outputCompression.value,
     partialImages: partialImages.value,
     advancedOpen: advancedOpen.value,
@@ -1900,11 +1840,9 @@ function normalizeCachedForm(value: Record<string, unknown>): CachedImageGenerat
     model: stringValue(value.model) || DEFAULT_MODEL,
     size: stringValue(value.size) || DEFAULT_SIZE,
     n: stringValue(value.n) || DEFAULT_COUNT,
-    quality: stringValue(value.quality),
-    background: stringValue(value.background),
-    outputFormat: stringValue(value.outputFormat),
-    moderation: stringValue(value.moderation),
-    style: stringValue(value.style),
+    quality: normalizeOptionValue(stringValue(value.quality), ['', 'auto', 'low', 'medium', 'high']),
+    background: normalizeOptionValue(stringValue(value.background), ['', 'transparent', 'opaque', 'auto']),
+    outputFormat: normalizeOptionValue(stringValue(value.outputFormat), ['', 'png', 'jpeg', 'webp']),
     outputCompression: stringValue(value.outputCompression),
     partialImages: stringValue(value.partialImages),
     advancedOpen: value.advancedOpen === true,
@@ -1926,6 +1864,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : ''
+}
+
+function normalizeOptionValue<T extends string>(value: string, allowedValues: readonly T[]): T {
+  return allowedValues.includes(value as T) ? value as T : allowedValues[0]
 }
 
 function createHistoryEntry(payload: CachedImageGenerationResult): ImageGenerationHistoryEntry {
@@ -1964,8 +1906,6 @@ function restoreHistoryEntry(entry: ImageGenerationHistoryEntry) {
   quality.value = entry.form.quality
   background.value = entry.form.background
   outputFormat.value = entry.form.outputFormat
-  moderation.value = entry.form.moderation
-  style.value = entry.form.style
   outputCompression.value = entry.form.outputCompression
   partialImages.value = entry.form.partialImages
   advancedOpen.value = entry.form.advancedOpen
@@ -2075,23 +2015,29 @@ function handleGlobalKeydown(event: KeyboardEvent) {
 }
 
 function restoreAdvancedSettings() {
+  const parsed = readAdvancedSettings()
+  if (parsed) applyAdvancedSettings(parsed)
+}
+
+function readAdvancedSettings(): CachedImageGenerationAdvancedSettings | null {
   const raw = localStorage.getItem(ADVANCED_SETTINGS_CACHE_KEY)
-  if (!raw) return
+  if (!raw) return null
 
   try {
-    const parsed = normalizeAdvancedSettings(JSON.parse(raw))
-    if (!parsed) return
-    quality.value = parsed.quality
-    background.value = parsed.background
-    outputFormat.value = parsed.outputFormat
-    moderation.value = parsed.moderation
-    style.value = parsed.style
-    outputCompression.value = parsed.outputCompression
-    partialImages.value = parsed.partialImages
-    advancedOpen.value = parsed.advancedOpen
+    return normalizeAdvancedSettings(JSON.parse(raw))
   } catch {
     localStorage.removeItem(ADVANCED_SETTINGS_CACHE_KEY)
+    return null
   }
+}
+
+function applyAdvancedSettings(settings: CachedImageGenerationAdvancedSettings) {
+  quality.value = settings.quality
+  background.value = settings.background
+  outputFormat.value = settings.outputFormat
+  outputCompression.value = settings.outputCompression
+  partialImages.value = settings.partialImages
+  advancedOpen.value = settings.advancedOpen
 }
 
 function persistAdvancedSettings() {
@@ -2099,8 +2045,6 @@ function persistAdvancedSettings() {
     quality: quality.value,
     background: background.value,
     outputFormat: outputFormat.value,
-    moderation: moderation.value,
-    style: style.value,
     outputCompression: outputCompression.value,
     partialImages: partialImages.value,
     advancedOpen: advancedOpen.value,
@@ -2111,14 +2055,23 @@ function persistAdvancedSettings() {
 function normalizeAdvancedSettings(value: unknown): CachedImageGenerationAdvancedSettings | null {
   if (!isRecord(value)) return null
   return {
-    quality: stringValue(value.quality),
-    background: stringValue(value.background),
-    outputFormat: stringValue(value.outputFormat),
-    moderation: stringValue(value.moderation),
-    style: stringValue(value.style),
+    quality: normalizeOptionValue(stringValue(value.quality), ['', 'auto', 'low', 'medium', 'high']),
+    background: normalizeOptionValue(stringValue(value.background), ['', 'transparent', 'opaque', 'auto']),
+    outputFormat: normalizeOptionValue(stringValue(value.outputFormat), ['', 'png', 'jpeg', 'webp']),
     outputCompression: stringValue(value.outputCompression),
     partialImages: stringValue(value.partialImages),
     advancedOpen: value.advancedOpen === true,
+  }
+}
+
+function createDefaultAdvancedSettings(): CachedImageGenerationAdvancedSettings {
+  return {
+    quality: '',
+    background: '',
+    outputFormat: '',
+    outputCompression: '',
+    partialImages: '',
+    advancedOpen: false,
   }
 }
 
