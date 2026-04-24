@@ -324,18 +324,6 @@
                 />
               </div>
 
-              <div class="space-y-1.5">
-                <label class="input-label">{{ t('imageGeneration.form.partialImages') }}</label>
-                <input
-                  v-model="partialImages"
-                  type="number"
-                  min="0"
-                  max="3"
-                  class="input w-full transition-all duration-200"
-                  :placeholder="t('imageGeneration.form.partialImagesPlaceholder')"
-                  :disabled="submitting"
-                />
-              </div>
             </div>
           </div>
 
@@ -689,7 +677,6 @@ interface CachedImageGenerationAdvancedSettings {
   background: string
   outputFormat: string
   outputCompression: string
-  partialImages: string
   advancedOpen: boolean
 }
 
@@ -716,7 +703,6 @@ interface CachedImageGenerationForm {
   background: string
   outputFormat: string
   outputCompression: string
-  partialImages: string
   advancedOpen: boolean
 }
 
@@ -772,12 +758,11 @@ const mode = ref<ImageMode>('generate')
 const prompt = ref('')
 const model = ref(DEFAULT_MODEL)
 const size = ref(DEFAULT_SIZE)
-const n = ref(DEFAULT_COUNT)
+const n = ref<string | number>(DEFAULT_COUNT)
 const quality = ref('')
 const background = ref('')
 const outputFormat = ref('')
-const outputCompression = ref('')
-const partialImages = ref('')
+const outputCompression = ref<string | number>('')
 const advancedOpen = ref(false)
 const sourceImagePreviews = ref<LocalImagePreview[]>([])
 const restoredFromCache = ref(false)
@@ -830,7 +815,6 @@ const sizeOptions = computed(() => [
 
 const qualityOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultAutoOption') },
-  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
   { value: 'low', label: t('imageGeneration.form.qualityLow') },
   { value: 'medium', label: t('imageGeneration.form.qualityMedium') },
   { value: 'high', label: t('imageGeneration.form.qualityHigh') },
@@ -838,9 +822,9 @@ const qualityOptions = computed(() => [
 
 const backgroundOptions = computed(() => [
   { value: '', label: t('imageGeneration.form.defaultOption') },
-  { value: 'transparent', label: 'transparent' },
-  { value: 'opaque', label: 'opaque' },
-  { value: 'auto', label: 'auto' },
+  { value: 'transparent', label: t('imageGeneration.form.backgroundTransparent') },
+  { value: 'opaque', label: t('imageGeneration.form.backgroundOpaque') },
+  { value: 'auto', label: t('imageGeneration.form.optionAuto') },
 ])
 
 const outputFormatOptions = computed(() => [
@@ -959,7 +943,7 @@ watch(maskEditorExpanded, (expanded) => {
   nextTick(() => renderMaskEditor())
 })
 
-watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputFormat, outputCompression, partialImages, advancedOpen], () => {
+watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputFormat, outputCompression, advancedOpen], () => {
   if (suppressRestoreWatcher || !restoredFromCache.value || submitting.value) {
     return
   }
@@ -967,7 +951,7 @@ watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputF
   activeHistoryId.value = ''
 })
 
-watch([quality, background, outputFormat, outputCompression, partialImages, advancedOpen], () => {
+watch([quality, background, outputFormat, outputCompression, advancedOpen], () => {
   persistAdvancedSettings()
 })
 
@@ -1152,7 +1136,7 @@ function cancelGeneration() {
 
 function validateGenerationForm(): string {
   if (!selectedKey.value) return t('imageGeneration.errors.keyRequired')
-  if (!prompt.value.trim()) return t('imageGeneration.errors.promptRequired')
+  if (!trimmedStringValue(prompt.value)) return t('imageGeneration.errors.promptRequired')
   if (mode.value !== 'generate' && sourceImagePreviews.value.length === 0) {
     return t(mode.value === 'mask'
       ? 'imageGeneration.errors.maskSourceImageRequired'
@@ -1167,19 +1151,11 @@ function validateGenerationForm(): string {
     return t('imageGeneration.errors.countRange')
   }
 
-  const compressionValue = outputCompression.value.trim()
+  const compressionValue = trimmedStringValue(outputCompression.value)
   if (compressionValue) {
     const compression = parseIntegerString(compressionValue)
     if (compression === null || compression < 0 || compression > 100) {
       return t('imageGeneration.errors.outputCompressionRange')
-    }
-  }
-
-  const partialValue = partialImages.value.trim()
-  if (partialValue) {
-    const partial = parseIntegerString(partialValue)
-    if (partial === null || partial < 0 || partial > 3) {
-      return t('imageGeneration.errors.partialImagesRange')
     }
   }
 
@@ -1210,10 +1186,10 @@ async function buildRequestInit(apiKey: string) {
 
 function buildJsonPayload() {
   const payload: Record<string, string | number | boolean> = {
-    prompt: prompt.value.trim(),
-    model: model.value.trim() || DEFAULT_MODEL,
+    prompt: trimmedStringValue(prompt.value),
+    model: trimmedStringValue(model.value) || DEFAULT_MODEL,
     response_format: FIXED_RESPONSE_FORMAT,
-    stream: false,
+    stream: true,
   }
 
   const imageCount = normalizePositiveInt(n.value)
@@ -1227,18 +1203,15 @@ function buildJsonPayload() {
   const compression = normalizeNonNegativeInt(outputCompression.value)
   if (compression !== null) payload.output_compression = compression
 
-  const partial = normalizePositiveInt(partialImages.value)
-  if (partial > 0) payload.partial_images = partial
-
   return payload
 }
 
 async function buildEditFormData() {
   const formData = new FormData()
-  formData.append('prompt', prompt.value.trim())
-  formData.append('model', model.value.trim() || DEFAULT_MODEL)
+  formData.append('prompt', trimmedStringValue(prompt.value))
+  formData.append('model', trimmedStringValue(model.value) || DEFAULT_MODEL)
   formData.append('response_format', FIXED_RESPONSE_FORMAT)
-  formData.append('stream', 'false')
+  formData.append('stream', 'true')
 
   const imageCount = normalizePositiveInt(n.value)
   if (imageCount > 0) formData.append('n', String(imageCount))
@@ -1250,9 +1223,6 @@ async function buildEditFormData() {
 
   const compression = normalizeNonNegativeInt(outputCompression.value)
   if (compression !== null) formData.append('output_compression', String(compression))
-
-  const partial = normalizePositiveInt(partialImages.value)
-  if (partial > 0) formData.append('partial_images', String(partial))
 
   const imagesToSubmit = mode.value === 'mask'
     ? sourceImagePreviews.value.slice(0, 1)
@@ -1268,7 +1238,7 @@ async function buildEditFormData() {
   return formData
 }
 
-function normalizePositiveInt(value: string): number {
+function normalizePositiveInt(value: unknown): number {
   const parsed = parseIntegerString(value)
   if (parsed === null || parsed <= 0) {
     return 0
@@ -1276,8 +1246,8 @@ function normalizePositiveInt(value: string): number {
   return parsed
 }
 
-function normalizeNonNegativeInt(value: string): number | null {
-  if (!value.trim()) return null
+function normalizeNonNegativeInt(value: unknown): number | null {
+  if (!trimmedStringValue(value)) return null
   const parsed = parseIntegerString(value)
   if (parsed === null || parsed < 0) {
     return null
@@ -1285,8 +1255,8 @@ function normalizeNonNegativeInt(value: string): number | null {
   return parsed
 }
 
-function parseIntegerString(value: string): number | null {
-  const normalized = value.trim()
+function parseIntegerString(value: unknown): number | null {
+  const normalized = trimmedStringValue(value)
   if (!/^-?\d+$/.test(normalized)) return null
   const parsed = Number.parseInt(normalized, 10)
   return Number.isSafeInteger(parsed) ? parsed : null
@@ -1708,15 +1678,14 @@ function createCachedResultPayload(savedAt: string, results: ResultImage[]): Cac
 function captureCurrentForm(): CachedImageGenerationForm {
   return {
     mode: mode.value,
-    prompt: prompt.value,
-    model: model.value,
-    size: size.value,
-    n: n.value,
-    quality: quality.value,
-    background: background.value,
-    outputFormat: outputFormat.value,
-    outputCompression: outputCompression.value,
-    partialImages: partialImages.value,
+    prompt: stringValue(prompt.value),
+    model: stringValue(model.value),
+    size: stringValue(size.value),
+    n: stringValue(n.value),
+    quality: stringValue(quality.value),
+    background: stringValue(background.value),
+    outputFormat: stringValue(outputFormat.value),
+    outputCompression: stringValue(outputCompression.value),
     advancedOpen: advancedOpen.value,
   }
 }
@@ -1840,11 +1809,10 @@ function normalizeCachedForm(value: Record<string, unknown>): CachedImageGenerat
     model: stringValue(value.model) || DEFAULT_MODEL,
     size: stringValue(value.size) || DEFAULT_SIZE,
     n: stringValue(value.n) || DEFAULT_COUNT,
-    quality: normalizeOptionValue(stringValue(value.quality), ['', 'auto', 'low', 'medium', 'high']),
+    quality: normalizeOptionValue(stringValue(value.quality), ['', 'low', 'medium', 'high']),
     background: normalizeOptionValue(stringValue(value.background), ['', 'transparent', 'opaque', 'auto']),
     outputFormat: normalizeOptionValue(stringValue(value.outputFormat), ['', 'png', 'jpeg', 'webp']),
     outputCompression: stringValue(value.outputCompression),
-    partialImages: stringValue(value.partialImages),
     advancedOpen: value.advancedOpen === true,
   }
 }
@@ -1863,7 +1831,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function stringValue(value: unknown): string {
-  return typeof value === 'string' ? value : ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return ''
+}
+
+function trimmedStringValue(value: unknown): string {
+  return stringValue(value).trim()
 }
 
 function normalizeOptionValue<T extends string>(value: string, allowedValues: readonly T[]): T {
@@ -1907,7 +1881,6 @@ function restoreHistoryEntry(entry: ImageGenerationHistoryEntry) {
   background.value = entry.form.background
   outputFormat.value = entry.form.outputFormat
   outputCompression.value = entry.form.outputCompression
-  partialImages.value = entry.form.partialImages
   advancedOpen.value = entry.form.advancedOpen
   resultImages.value = [...entry.results]
   restoredFromCache.value = true
@@ -2036,17 +2009,15 @@ function applyAdvancedSettings(settings: CachedImageGenerationAdvancedSettings) 
   background.value = settings.background
   outputFormat.value = settings.outputFormat
   outputCompression.value = settings.outputCompression
-  partialImages.value = settings.partialImages
   advancedOpen.value = settings.advancedOpen
 }
 
 function persistAdvancedSettings() {
   const payload: CachedImageGenerationAdvancedSettings = {
-    quality: quality.value,
-    background: background.value,
-    outputFormat: outputFormat.value,
-    outputCompression: outputCompression.value,
-    partialImages: partialImages.value,
+    quality: stringValue(quality.value),
+    background: stringValue(background.value),
+    outputFormat: stringValue(outputFormat.value),
+    outputCompression: stringValue(outputCompression.value),
     advancedOpen: advancedOpen.value,
   }
   localStorage.setItem(ADVANCED_SETTINGS_CACHE_KEY, JSON.stringify(payload))
@@ -2055,11 +2026,10 @@ function persistAdvancedSettings() {
 function normalizeAdvancedSettings(value: unknown): CachedImageGenerationAdvancedSettings | null {
   if (!isRecord(value)) return null
   return {
-    quality: normalizeOptionValue(stringValue(value.quality), ['', 'auto', 'low', 'medium', 'high']),
+    quality: normalizeOptionValue(stringValue(value.quality), ['', 'low', 'medium', 'high']),
     background: normalizeOptionValue(stringValue(value.background), ['', 'transparent', 'opaque', 'auto']),
     outputFormat: normalizeOptionValue(stringValue(value.outputFormat), ['', 'png', 'jpeg', 'webp']),
     outputCompression: stringValue(value.outputCompression),
-    partialImages: stringValue(value.partialImages),
     advancedOpen: value.advancedOpen === true,
   }
 }
@@ -2070,7 +2040,6 @@ function createDefaultAdvancedSettings(): CachedImageGenerationAdvancedSettings 
     background: '',
     outputFormat: '',
     outputCompression: '',
-    partialImages: '',
     advancedOpen: false,
   }
 }
