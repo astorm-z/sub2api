@@ -106,6 +106,17 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 
 **Recommendation:** Use `docker-compose.local.yml` (deployed by `docker-deploy.sh`) for easier data management and migration.
 
+### Image Source
+
+The compose files default to `ghcr.io/astorm-z/sub2api:main`.
+This tag is built automatically by GitHub Actions on every push to the `main` branch.
+
+If you want to pin a stable release instead of following `main`, set this in `.env`:
+
+```bash
+SUB2API_IMAGE=ghcr.io/astorm-z/sub2api:v1.2.3
+```
+
 ### How Auto-Setup Works
 
 When using Docker Compose with `AUTO_SETUP=true`:
@@ -212,6 +223,7 @@ docker compose down -v
 | `POSTGRES_PASSWORD` | **Yes** | - | PostgreSQL password |
 | `JWT_SECRET` | **Recommended** | *(auto-generated)* | JWT secret (fixed for persistent sessions) |
 | `TOTP_ENCRYPTION_KEY` | **Recommended** | *(auto-generated)* | TOTP encryption key (fixed for persistent 2FA) |
+| `SUB2API_IMAGE` | No | `ghcr.io/astorm-z/sub2api:main` | Docker image used by compose |
 | `SERVER_PORT` | No | `8080` | Server port |
 | `ADMIN_EMAIL` | No | `admin@sub2api.local` | Admin email |
 | `ADMIN_PASSWORD` | No | *(auto-generated)* | Admin password |

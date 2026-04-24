@@ -272,6 +272,9 @@ TOTP_ENCRYPTION_KEY=your_totp_key_here
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=your_admin_password
 
+# Optional: Compose image source
+SUB2API_IMAGE=ghcr.io/astorm-z/sub2api:main
+
 # Optional: Custom port
 SERVER_PORT=8080
 ```
@@ -314,6 +317,17 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 | **docker-compose.yml** | Named volumes | ⚠️ Requires docker commands | Simple setup |
 
 **Recommendation:** Use `docker-compose.local.yml` (deployed by script) for easier data management.
+
+#### Image Source
+
+The compose files now default to `ghcr.io/astorm-z/sub2api:main`.
+This tag is built automatically by GitHub Actions on every push to the `main` branch.
+
+If you want to pin a release image instead, set this in `.env` before running compose:
+
+```bash
+SUB2API_IMAGE=ghcr.io/astorm-z/sub2api:v1.2.3
+```
 
 #### Access
 
