@@ -374,7 +374,7 @@
             </div>
 
             <div
-              v-if="resultImages.length > 0"
+              v-if="!submitting && resultImages.length > 0"
               class="flex flex-wrap items-center gap-2"
             >
               <button
@@ -397,7 +397,7 @@
           </div>
 
           <div
-            v-if="submitting"
+            v-if="submitting && resultImages.length === 0"
             class="flex min-h-[260px] flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-primary-200 bg-primary-50/60 px-6 py-8 text-center dark:border-primary-800 dark:bg-primary-900/10"
           >
             <div class="flex h-14 w-14 items-center justify-center rounded-full bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
@@ -449,6 +449,14 @@
 
           <div v-else class="space-y-4">
             <div
+              v-if="submitting"
+              class="flex items-center gap-2 rounded-2xl border border-primary-200 bg-primary-50/70 px-4 py-3 text-sm text-primary-700 dark:border-primary-800 dark:bg-primary-900/20 dark:text-primary-300"
+            >
+              <Icon name="refresh" size="sm" class="animate-spin" />
+              <span>{{ t('imageGeneration.result.streamingSummary', { count: resultImages.length }) }}</span>
+            </div>
+
+            <div
               class="grid grid-cols-1 gap-4 lg:grid-cols-2"
             >
               <article
@@ -483,6 +491,13 @@
                     </span>
                   </div>
 
+                  <div
+                    v-if="image.isPartial"
+                    class="rounded-xl bg-primary-50 px-3 py-2 text-xs text-primary-700 dark:bg-primary-900/20 dark:text-primary-300"
+                  >
+                    {{ t('imageGeneration.result.partialBadge') }}
+                  </div>
+
                   <p
                     v-if="image.revisedPrompt"
                     class="rounded-xl bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-600 dark:bg-dark-900/40 dark:text-gray-300"
@@ -494,6 +509,7 @@
                     <button
                       type="button"
                       class="btn btn-secondary btn-sm"
+                      :disabled="submitting || image.isPartial"
                       @click="downloadImage(image, index)"
                     >
                       <Icon name="link" size="sm" class="mr-1.5" />
@@ -502,6 +518,7 @@
                     <button
                       type="button"
                       class="btn btn-secondary btn-sm"
+                      :disabled="submitting || image.isPartial"
                       @click="copyImageLink(image)"
                     >
                       <Icon name="link" size="sm" class="mr-1.5" />
@@ -691,6 +708,7 @@ interface ResultImage {
   mimeType: string
   fileName: string
   revisedPrompt?: string
+  isPartial?: boolean
 }
 
 interface CachedImageGenerationForm {
@@ -728,6 +746,20 @@ interface ImagesApiResponse {
   created?: number
   data?: ImagesApiResponseDataItem[]
   output_format?: string
+}
+
+interface ImageGenerationStreamError {
+  message?: string
+}
+
+interface ImageGenerationStreamPayload {
+  type?: string
+  url?: string
+  b64_json?: string
+  revised_prompt?: string
+  partial_image_index?: number
+  output_format?: string
+  error?: ImageGenerationStreamError
 }
 
 const LEGACY_LOCAL_CACHE_KEY = 'sub2api:last-image-generation-result'
@@ -893,7 +925,9 @@ const hasDirtyResult = computed(() =>
 
 const resultSummaryText = computed(() => {
   if (submitting.value) {
-    return t('imageGeneration.result.pendingSummary')
+    return resultImages.value.length > 0
+      ? t('imageGeneration.result.streamingSummary', { count: resultImages.value.length })
+      : t('imageGeneration.result.pendingSummary')
   }
   if (resultImages.value.length === 0) {
     return t('imageGeneration.result.emptySummary')
@@ -1082,6 +1116,10 @@ async function submitGeneration() {
   }
 
   submitError.value = ''
+  resultImages.value = []
+  restoredFromCache.value = false
+  activeHistoryId.value = ''
+  lastSavedAt.value = ''
   submitting.value = true
   abortController = new AbortController()
 
@@ -1095,13 +1133,14 @@ async function submitGeneration() {
       signal: abortController.signal,
     })
 
-    const responseText = await response.text()
     if (!response.ok) {
+      const responseText = await response.text()
       throw new Error(extractImagesErrorMessage(responseText, response.status))
     }
 
-    const payload = JSON.parse(responseText) as ImagesApiResponse
-    const images = normalizeResponseImages(payload)
+    const images = isEventStreamResponse(response)
+      ? await consumeImageGenerationStream(response)
+      : await consumeImageGenerationJson(response)
     if (images.length === 0) {
       throw new Error(t('imageGeneration.errors.noImagesReturned'))
     }
@@ -1117,6 +1156,10 @@ async function submitGeneration() {
     }
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
+      resultImages.value = []
+      restoredFromCache.value = false
+      activeHistoryId.value = ''
+      lastSavedAt.value = ''
       appStore.showInfo(t('imageGeneration.messages.cancelled'))
       return
     }
@@ -1239,6 +1282,175 @@ async function buildEditFormData() {
     formData.append('mask', maskBlob, 'mask.png')
   }
   return formData
+}
+
+function isEventStreamResponse(response: Response): boolean {
+  const contentType = response.headers.get('content-type') || ''
+  return contentType.toLowerCase().includes('text/event-stream')
+}
+
+async function consumeImageGenerationJson(response: Response): Promise<ResultImage[]> {
+  const responseText = await response.text()
+  const payload = JSON.parse(responseText) as ImagesApiResponse
+  return normalizeResponseImages(payload)
+}
+
+async function consumeImageGenerationStream(response: Response): Promise<ResultImage[]> {
+  const reader = response.body?.getReader()
+  if (!reader) {
+    throw new Error(t('imageGeneration.errors.generateFailed'))
+  }
+
+  const decoder = new TextDecoder()
+  const completedImages: ResultImage[] = []
+  let completedCount = 0
+  let buffer = ''
+  let currentEvent = ''
+  let currentDataLines: string[] = []
+
+  const dispatchEvent = () => {
+    if (!currentEvent && currentDataLines.length === 0) {
+      return
+    }
+
+    const eventName = currentEvent.trim()
+    const rawData = currentDataLines.join('\n').trim()
+    currentEvent = ''
+    currentDataLines = []
+
+    if (!rawData || rawData === '[DONE]') {
+      return
+    }
+
+    let payload: ImageGenerationStreamPayload
+    try {
+      payload = JSON.parse(rawData) as ImageGenerationStreamPayload
+    } catch {
+      throw new Error(t('imageGeneration.errors.generateFailed'))
+    }
+
+    const payloadType = trimmedStringValue(payload.type)
+    const resolvedEvent = eventName || payloadType
+    if (resolvedEvent === 'error' || payloadType === 'error') {
+      throw new Error(trimmedStringValue(payload.error?.message) || t('imageGeneration.errors.generateFailed'))
+    }
+
+    if (resolvedEvent.endsWith('.partial_image') || payloadType.endsWith('.partial_image')) {
+      const partialIndex = Number.isInteger(payload.partial_image_index)
+        ? Number(payload.partial_image_index)
+        : resultImages.value.length
+      const partialImage = createStreamResultImage(payload, partialIndex, true)
+      if (!partialImage) return
+      upsertStreamResultImage(partialImage, partialIndex)
+      return
+    }
+
+    if (resolvedEvent.endsWith('.completed') || payloadType.endsWith('.completed')) {
+      const completedImage = createStreamResultImage(payload, completedCount, false)
+      if (!completedImage) return
+      upsertStreamResultImage(completedImage, completedCount)
+      completedImages.push(completedImage)
+      completedCount += 1
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const rawLine of lines) {
+      const line = rawLine.replace(/\r$/, '')
+      if (!line) {
+        dispatchEvent()
+        continue
+      }
+      if (line.startsWith(':')) {
+        continue
+      }
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim()
+        continue
+      }
+      if (line.startsWith('data:')) {
+        currentDataLines.push(line.slice(5).trimStart())
+      }
+    }
+  }
+
+  buffer += decoder.decode()
+  if (buffer.trim()) {
+    const trailingLines = buffer.split('\n')
+    for (const rawLine of trailingLines) {
+      const line = rawLine.replace(/\r$/, '')
+      if (!line) {
+        dispatchEvent()
+        continue
+      }
+      if (line.startsWith(':')) {
+        continue
+      }
+      if (line.startsWith('event:')) {
+        currentEvent = line.slice(6).trim()
+        continue
+      }
+      if (line.startsWith('data:')) {
+        currentDataLines.push(line.slice(5).trimStart())
+      }
+    }
+  }
+  dispatchEvent()
+
+  if (completedImages.length === 0) {
+    throw new Error(t('imageGeneration.errors.noImagesReturned'))
+  }
+
+  resultImages.value = [...completedImages]
+  return completedImages
+}
+
+function createStreamResultImage(
+  payload: ImageGenerationStreamPayload,
+  index: number,
+  isPartial: boolean,
+): ResultImage | null {
+  const outputFormat = trimmedStringValue(payload.output_format) || 'png'
+  const mimeType = resolveMimeType(outputFormat)
+  const url = normalizeStreamImageUrl(payload, mimeType)
+  if (!url) return null
+
+  return {
+    url,
+    mimeType: detectMimeTypeFromUrl(url, mimeType),
+    fileName: buildImageFileName(index, url, mimeType),
+    revisedPrompt: trimmedStringValue(payload.revised_prompt) || undefined,
+    isPartial,
+  }
+}
+
+function normalizeStreamImageUrl(payload: ImageGenerationStreamPayload, mimeType: string): string {
+  const directUrl = trimmedStringValue(payload.url)
+  if (directUrl) {
+    return directUrl
+  }
+  const b64 = trimmedStringValue(payload.b64_json)
+  if (!b64) {
+    return ''
+  }
+  return `data:${mimeType};base64,${b64}`
+}
+
+function upsertStreamResultImage(image: ResultImage, targetIndex: number) {
+  const nextImages = [...resultImages.value]
+  if (targetIndex >= 0 && targetIndex < nextImages.length) {
+    nextImages[targetIndex] = image
+  } else {
+    nextImages.push(image)
+  }
+  resultImages.value = nextImages
 }
 
 function normalizePositiveInt(value: unknown): number {

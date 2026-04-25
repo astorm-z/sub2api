@@ -1055,6 +1055,7 @@ export default {
     result: {
       title: 'Results',
       pendingSummary: 'Request sent. Waiting for images to arrive.',
+      streamingSummary: '{count} streamed preview image(s) received. Final images are still generating.',
       emptySummary: 'Your latest generated images will appear here.',
       cachedSummary: 'Restored the latest cached result from your browser, {count} image(s).',
       readySummary: '{count} image(s) generated in this run.',
@@ -1068,6 +1069,7 @@ export default {
       download: 'Download',
       copyLink: 'Copy link',
       preview: 'Preview',
+      partialBadge: 'Preview in progress. Final image will replace this automatically.',
     },
     history: {
       title: 'History',

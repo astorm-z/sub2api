@@ -1059,6 +1059,7 @@ export default {
     result: {
       title: '生成结果',
       pendingSummary: '请求已发出，正在等待图片返回。',
+      streamingSummary: '已收到 {count} 张流式预览，最终结果仍在生成中。',
       emptySummary: '生成完成后会在这里展示最新结果。',
       cachedSummary: '已从浏览器缓存恢复最近一次结果，共 {count} 张。',
       readySummary: '本次已生成 {count} 张图片。',
@@ -1072,6 +1073,7 @@ export default {
       download: '下载',
       copyLink: '复制链接',
       preview: '预览',
+      partialBadge: '预览中，最终结果完成后会自动替换',
     },
     history: {
       title: '历史记录',
