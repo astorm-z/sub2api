@@ -1040,7 +1040,7 @@ export default {
       outputFormatJpeg: 'JPEG (Smaller size)',
       outputFormatWebp: 'WebP (Better compression)',
       outputCompression: 'Output compression',
-      outputCompressionHelp: 'Controls output image compression, mainly for JPEG and WebP. Higher values usually preserve more quality but also produce larger files; leave empty to use the model default.',
+      outputCompressionHelp: 'Compression level for generated images (0-100%). This is only supported by GPT image models using webp or jpeg output, and defaults to 100.',
       outputCompressionPlaceholder: '0-100',
       optionAuto: 'Auto',
       defaultOption: 'Default',

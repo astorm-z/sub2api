@@ -1044,7 +1044,7 @@ export default {
       outputFormatJpeg: 'JPEG（体积较小）',
       outputFormatWebp: 'WebP（更省体积）',
       outputCompression: '输出压缩',
-      outputCompressionHelp: '控制生成图片的压缩程度，主要影响 JPEG 和 WebP。一般数值越高画质越好、体积也越大；留空则使用模型默认值。',
+      outputCompressionHelp: '生成图像的压缩级别（0-100%）。此参数仅支持使用 webp 或 jpeg 输出格式的 GPT 图像模型，默认值为 100。',
       outputCompressionPlaceholder: '0-100',
       optionAuto: '自动',
       defaultOption: '默认',

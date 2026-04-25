@@ -312,7 +312,21 @@
               </div>
 
               <div class="space-y-1.5">
-                <label class="input-label">{{ t('imageGeneration.form.outputCompression') }}</label>
+                <div class="flex items-center gap-1">
+                  <label class="input-label mb-0">{{ t('imageGeneration.form.outputCompression') }}</label>
+                  <HelpTooltip
+                    :content="t('imageGeneration.form.outputCompressionHelp')"
+                    width-class="w-80"
+                  >
+                    <template #trigger>
+                      <Icon
+                        name="questionCircle"
+                        size="sm"
+                        class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                      />
+                    </template>
+                  </HelpTooltip>
+                </div>
                 <input
                   v-model="outputCompression"
                   type="number"
@@ -674,6 +688,7 @@ import { keysAPI } from '@/api/keys'
 import type { ApiKey } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Select from '@/components/common/Select.vue'
 import Input from '@/components/common/Input.vue'
 import TextArea from '@/components/common/TextArea.vue'
