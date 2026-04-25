@@ -1083,6 +1083,7 @@ export default {
     },
     messages: {
       generateSuccess: '{count} image(s) generated',
+      historySaveSkipped: 'Images were generated, but browser storage is full, so this result was not saved to history.',
       cancelled: 'The request has been cancelled',
       cacheCleared: 'Image generation history has been cleared',
       linksCopied: 'All image links copied',

@@ -1110,8 +1110,11 @@ async function submitGeneration() {
     restoredFromCache.value = false
     lastSavedAt.value = new Date().toISOString()
     activeHistoryId.value = ''
-    persistCachedResult()
+    const historyPersisted = persistCachedResult()
     appStore.showSuccess(t('imageGeneration.messages.generateSuccess', { count: images.length }))
+    if (!historyPersisted) {
+      appStore.showWarning(t('imageGeneration.messages.historySaveSkipped'))
+    }
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       appStore.showInfo(t('imageGeneration.messages.cancelled'))
@@ -1690,24 +1693,25 @@ function captureCurrentForm(): CachedImageGenerationForm {
   }
 }
 
-function persistCachedResult() {
+function persistCachedResult(): boolean {
   const entry = createHistoryEntry(createCachedResultPayload(lastSavedAt.value, resultImages.value))
   imageHistory.value = [
     entry,
     ...imageHistory.value.filter((item) => item.id !== entry.id),
   ].slice(0, HISTORY_LIMIT)
-  activeHistoryId.value = entry.id
-  persistImageHistory()
+  const historyPersisted = persistImageHistory(entry.id)
+  activeHistoryId.value = historyPersisted ? entry.id : ''
+  return historyPersisted
 }
 
 function restoreCachedResult() {
   imageHistory.value = loadImageHistory()
   persistImageHistory()
-
-  const latestEntry = imageHistory.value[0]
-  if (latestEntry) {
-    restoreHistoryEntry(latestEntry)
-  }
+  activeHistoryId.value = ''
+  resultImages.value = []
+  restoredFromCache.value = false
+  submitError.value = ''
+  lastSavedAt.value = ''
 }
 
 function clearCachedResult() {
@@ -1840,6 +1844,15 @@ function trimmedStringValue(value: unknown): string {
   return stringValue(value).trim()
 }
 
+function isQuotaExceededError(error: unknown): boolean {
+  return error instanceof DOMException && (
+    error.name === 'QuotaExceededError' ||
+    error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    error.code === 22 ||
+    error.code === 1014
+  )
+}
+
 function normalizeOptionValue<T extends string>(value: string, allowedValues: readonly T[]): T {
   return allowedValues.includes(value as T) ? value as T : allowedValues[0]
 }
@@ -1861,8 +1874,49 @@ function getHistoryTimestamp(entry: ImageGenerationHistoryEntry): number {
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 
-function persistImageHistory() {
-  localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(imageHistory.value.slice(0, HISTORY_LIMIT)))
+function persistImageHistory(preferredEntryId?: string): boolean {
+  const nextHistory = imageHistory.value.slice(0, HISTORY_LIMIT)
+
+  if (nextHistory.length === 0) {
+    try {
+      localStorage.setItem(HISTORY_CACHE_KEY, '[]')
+      return false
+    } catch (error) {
+      if (!isQuotaExceededError(error)) {
+        console.warn('Failed to clear image generation history', error)
+      }
+      return false
+    }
+  }
+
+  while (nextHistory.length > 0) {
+    try {
+      localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(nextHistory))
+      imageHistory.value = nextHistory
+      return preferredEntryId
+        ? nextHistory.some((entry) => entry.id === preferredEntryId)
+        : true
+    } catch (error) {
+      if (!isQuotaExceededError(error)) {
+        console.warn('Failed to persist image generation history', error)
+        return preferredEntryId
+          ? nextHistory.some((entry) => entry.id === preferredEntryId)
+          : false
+      }
+      nextHistory.pop()
+    }
+  }
+
+  try {
+    localStorage.setItem(HISTORY_CACHE_KEY, '[]')
+  } catch (error) {
+    if (!isQuotaExceededError(error)) {
+      console.warn('Failed to reset image generation history after quota overflow', error)
+    }
+  }
+
+  imageHistory.value = []
+  return false
 }
 
 function restoreHistoryEntry(entry: ImageGenerationHistoryEntry) {

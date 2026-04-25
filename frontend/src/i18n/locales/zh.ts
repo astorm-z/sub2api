@@ -1087,6 +1087,7 @@ export default {
     },
     messages: {
       generateSuccess: '已生成 {count} 张图片',
+      historySaveSkipped: '图片已生成，但浏览器本地存储空间不足，本次结果未保存到历史记录。',
       cancelled: '已取消本次请求',
       cacheCleared: '已清空生图历史记录',
       linksCopied: '已复制全部图片链接',
