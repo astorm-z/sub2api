@@ -782,6 +782,7 @@ const HISTORY_CACHE_KEY = 'sub2api:image-generation-history'
 const ADVANCED_SETTINGS_CACHE_KEY = 'sub2api:image-generation-advanced-settings'
 const HISTORY_LIMIT = 10
 const FIXED_RESPONSE_FORMAT = 'url'
+const FIXED_PARTIAL_IMAGES = 2
 const DEFAULT_MODEL = 'gpt-image-2'
 const DEFAULT_SIZE = '1024x1024'
 const DEFAULT_COUNT = '1'
@@ -1259,6 +1260,7 @@ function buildJsonPayload() {
   if (quality.value) payload.quality = quality.value
   if (background.value) payload.background = background.value
   if (outputFormat.value) payload.output_format = outputFormat.value
+  payload.partial_images = FIXED_PARTIAL_IMAGES
   payload.moderation = 'low'
 
   const compression = normalizeNonNegativeInt(outputCompression.value)
@@ -1280,6 +1282,7 @@ async function buildEditFormData() {
   if (quality.value) formData.append('quality', quality.value)
   if (background.value) formData.append('background', background.value)
   if (outputFormat.value) formData.append('output_format', outputFormat.value)
+  formData.append('partial_images', String(FIXED_PARTIAL_IMAGES))
   formData.append('moderation', 'low')
 
   const compression = normalizeNonNegativeInt(outputCompression.value)
