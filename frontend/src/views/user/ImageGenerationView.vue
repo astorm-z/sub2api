@@ -234,7 +234,7 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div class="grid grid-cols-1 gap-3">
             <div class="space-y-1.5">
               <label class="input-label">{{ t('imageGeneration.form.size') }}</label>
               <Select
@@ -244,6 +244,8 @@
               />
             </div>
 
+            <!-- Count input is temporarily hidden; requests always use DEFAULT_COUNT. -->
+            <!--
             <div class="space-y-1.5">
               <label class="input-label">{{ t('imageGeneration.form.count') }}</label>
               <Input
@@ -256,6 +258,7 @@
                 placeholder="1"
               />
             </div>
+            -->
           </div>
 
           <div class="rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900/30">
@@ -1208,11 +1211,6 @@ function validateGenerationForm(): string {
     return t('imageGeneration.errors.maskDrawingRequired')
   }
 
-  const imageCount = parseIntegerString(n.value)
-  if (imageCount === null || imageCount < 1 || imageCount > 10) {
-    return t('imageGeneration.errors.countRange')
-  }
-
   const compressionValue = trimmedStringValue(outputCompression.value)
   if (compressionValue) {
     const compression = parseIntegerString(compressionValue)
@@ -1254,8 +1252,7 @@ function buildJsonPayload() {
     stream: true,
   }
 
-  const imageCount = normalizePositiveInt(n.value)
-  if (imageCount > 0) payload.n = imageCount
+  payload.n = Number(DEFAULT_COUNT)
   if (size.value) payload.size = size.value
   if (quality.value) payload.quality = quality.value
   if (background.value) payload.background = background.value
@@ -1276,8 +1273,7 @@ async function buildEditFormData() {
   formData.append('response_format', FIXED_RESPONSE_FORMAT)
   formData.append('stream', 'true')
 
-  const imageCount = normalizePositiveInt(n.value)
-  if (imageCount > 0) formData.append('n', String(imageCount))
+  formData.append('n', DEFAULT_COUNT)
   if (size.value) formData.append('size', size.value)
   if (quality.value) formData.append('quality', quality.value)
   if (background.value) formData.append('background', background.value)
@@ -1469,14 +1465,6 @@ function upsertStreamResultImage(image: ResultImage, targetIndex: number) {
     nextImages.push(image)
   }
   resultImages.value = nextImages
-}
-
-function normalizePositiveInt(value: unknown): number {
-  const parsed = parseIntegerString(value)
-  if (parsed === null || parsed <= 0) {
-    return 0
-  }
-  return parsed
 }
 
 function normalizeNonNegativeInt(value: unknown): number | null {
@@ -1914,7 +1902,7 @@ function captureCurrentForm(): CachedImageGenerationForm {
     prompt: stringValue(prompt.value),
     model: stringValue(model.value),
     size: stringValue(size.value),
-    n: stringValue(n.value),
+    n: DEFAULT_COUNT,
     quality: stringValue(quality.value),
     background: stringValue(background.value),
     outputFormat: stringValue(outputFormat.value),
@@ -2160,7 +2148,7 @@ function restoreHistoryEntry(entry: ImageGenerationHistoryEntry) {
   prompt.value = entry.form.prompt
   model.value = entry.form.model
   size.value = entry.form.size
-  n.value = entry.form.n
+  n.value = DEFAULT_COUNT
   quality.value = entry.form.quality
   background.value = entry.form.background
   outputFormat.value = entry.form.outputFormat
