@@ -129,6 +129,7 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Contains(t, csp, "default-src 'self'")
 		assert.Contains(t, csp, "'nonce-")
 		assert.Contains(t, csp, CloudflareInsightsDomain)
+		assert.Contains(t, csp, "img-src 'self' blob:")
 	})
 
 	t.Run("api_route_skips_csp_nonce_generation", func(t *testing.T) {
@@ -192,6 +193,7 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.NotEmpty(t, csp)
 		// Default policy should contain these elements
 		assert.Contains(t, csp, "default-src 'self'")
+		assert.Contains(t, csp, "img-src 'self' data: https: blob:")
 	})
 
 	t.Run("uses_default_policy_when_whitespace_only", func(t *testing.T) {
@@ -329,6 +331,21 @@ func TestEnhanceCSPPolicy(t *testing.T) {
 		// Should not add placeholder if nonce already exists
 		assert.NotContains(t, enhanced, NonceTemplate)
 		assert.Contains(t, enhanced, "'nonce-existing'")
+	})
+
+	t.Run("adds_blob_to_existing_img_src", func(t *testing.T) {
+		policy := "default-src 'self'; img-src 'self' data: https:"
+		enhanced := enhanceCSPPolicy(policy)
+
+		assert.Contains(t, enhanced, "img-src 'self' data: https: blob:")
+	})
+
+	t.Run("does_not_duplicate_blob_img_src", func(t *testing.T) {
+		policy := "default-src 'self'; img-src 'self' data: https: blob:"
+		enhanced := enhanceCSPPolicy(policy)
+
+		count := strings.Count(enhanced, ImageBlobSource)
+		assert.Equal(t, 1, count)
 	})
 }
 

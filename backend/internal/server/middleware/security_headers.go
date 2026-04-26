@@ -20,6 +20,8 @@ const (
 	CloudflareInsightsDomain = "https://static.cloudflareinsights.com"
 	// StripeDomain is the domain for Stripe.js SDK
 	StripeDomain = "https://*.stripe.com"
+	// ImageBlobSource allows object URLs created for local image previews.
+	ImageBlobSource = "blob:"
 )
 
 // GenerateNonce generates a cryptographically secure random nonce.
@@ -51,7 +53,7 @@ func SecurityHeaders(cfg config.CSPConfig, getFrameSrcOrigins func() []string) g
 		policy = config.DefaultCSPPolicy
 	}
 
-	// Enhance policy with required directives (nonce placeholder and Cloudflare Insights)
+	// Enhance policy with directives required by the web UI.
 	policy = enhanceCSPPolicy(policy)
 
 	return func(c *gin.Context) {
@@ -101,8 +103,8 @@ func isAPIRoutePath(c *gin.Context) bool {
 }
 
 // enhanceCSPPolicy ensures the CSP policy includes nonce support, Cloudflare Insights,
-// and Stripe.js domains. This allows the application to work correctly even if the
-// config file has an older CSP policy.
+// Stripe.js domains, and local image blob URLs. This allows the application to work
+// correctly even if the config file has an older CSP policy.
 func enhanceCSPPolicy(policy string) string {
 	// Add nonce placeholder to script-src if not present
 	if !strings.Contains(policy, NonceTemplate) && !strings.Contains(policy, "'nonce-") {
@@ -120,7 +122,35 @@ func enhanceCSPPolicy(policy string) string {
 		policy = addToDirective(policy, "frame-src", StripeDomain)
 	}
 
+	// Local image previews and mask editing use URL.createObjectURL, which
+	// produces blob: URLs that must be allowed by img-src.
+	if !directiveHasValue(policy, "img-src", ImageBlobSource) {
+		policy = addToDirective(policy, "img-src", ImageBlobSource)
+	}
+
 	return policy
+}
+
+func directiveHasValue(policy, directive, value string) bool {
+	directivePrefix := directive + " "
+	idx := strings.Index(policy, directivePrefix)
+	if idx == -1 {
+		return false
+	}
+
+	endIdx := strings.Index(policy[idx:], ";")
+	directiveText := policy[idx:]
+	if endIdx != -1 {
+		directiveText = policy[idx : idx+endIdx]
+	}
+
+	fields := strings.Fields(directiveText)
+	for _, field := range fields[1:] {
+		if field == value {
+			return true
+		}
+	}
+	return false
 }
 
 // addToDirective adds a value to a specific CSP directive.
