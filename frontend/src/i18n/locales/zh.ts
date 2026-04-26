@@ -979,7 +979,7 @@ export default {
   },
   imageGeneration: {
     title: 'AI生图',
-    description: '使用你自己的 API Key 发起文生图、改图或遮罩局部编辑请求，成功结果会自动保存到浏览器历史。',
+    description: '使用你自己的 API Key 发起文生图、改图或遮罩局部编辑请求，成功结果会在浏览器中临时保留最近一次。',
     endpointGenerate: '当前接口：/v1/images/generations',
     endpointEdit: '当前接口：/v1/images/edits',
     loadingKeys: '正在加载可用 API Key',
@@ -1078,9 +1078,9 @@ export default {
     },
     history: {
       title: '历史记录',
-      summary: '浏览器本地保存最近 {max} 次结果，当前 {count} 次。',
+      summary: '浏览器本地仅保留最近 {max} 次结果，新生成会覆盖旧历史。当前 {count} 次。',
       emptyTitle: '暂无历史记录',
-      emptyDescription: '成功生成后会自动保存到这里。',
+      emptyDescription: '成功生成后会自动临时保留最近一次。',
       imageCount: '{count} 张',
       meta: '{mode} · {model} · {size}',
       emptyPrompt: '未记录提示词',
@@ -1090,7 +1090,8 @@ export default {
     },
     messages: {
       generateSuccess: '已生成 {count} 张图片',
-      historySaveSkipped: '图片已生成，但浏览器本地存储空间不足，本次结果未保存到历史记录。',
+      saveGeneratedImagesSoon: '请尽快下载图片或复制链接保存。本站不会存储你的生成图片，浏览器缓存空间也有限，历史记录只会临时保留最近一次结果。',
+      historySaveSkipped: '图片已生成，但浏览器本地存储空间不足，本次结果未保存到历史记录。请立即下载图片或复制链接保存。',
       cancelled: '已取消本次请求',
       cacheCleared: '已清空生图历史记录',
       linksCopied: '已复制全部图片链接',

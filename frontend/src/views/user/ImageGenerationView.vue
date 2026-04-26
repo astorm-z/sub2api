@@ -204,24 +204,26 @@
                   </button>
                 </div>
 
-                <div class="relative mx-auto w-full max-w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-600 dark:bg-dark-900">
-                  <canvas
-                    ref="maskBaseCanvasRef"
-                    :width="maskCanvasWidth"
-                    :height="maskCanvasHeight"
-                    class="block h-auto w-full"
-                  />
-                  <canvas
-                    ref="maskDrawingCanvasRef"
-                    :width="maskCanvasWidth"
-                    :height="maskCanvasHeight"
-                    class="absolute inset-0 h-full w-full touch-none cursor-crosshair"
-                    @pointerdown="handleMaskPointerDown"
-                    @pointermove="handleMaskPointerMove"
-                    @pointerup="handleMaskPointerUp"
-                    @pointercancel="handleMaskPointerUp"
-                    @pointerleave="handleMaskPointerLeave"
-                  />
+                <div :class="maskCanvasFrameClass">
+                  <div class="relative min-w-full">
+                    <canvas
+                      ref="maskBaseCanvasRef"
+                      :width="maskCanvasWidth"
+                      :height="maskCanvasHeight"
+                      class="block h-auto w-full"
+                    />
+                    <canvas
+                      ref="maskDrawingCanvasRef"
+                      :width="maskCanvasWidth"
+                      :height="maskCanvasHeight"
+                      class="absolute inset-0 h-full w-full touch-none cursor-crosshair"
+                      @pointerdown="handleMaskPointerDown"
+                      @pointermove="handleMaskPointerMove"
+                      @pointerup="handleMaskPointerUp"
+                      @pointercancel="handleMaskPointerUp"
+                      @pointerleave="handleMaskPointerLeave"
+                    />
+                  </div>
                 </div>
               </div>
             </Teleport>
@@ -783,7 +785,7 @@ interface ImageGenerationStreamPayload {
 const LEGACY_LOCAL_CACHE_KEY = 'sub2api:last-image-generation-result'
 const HISTORY_CACHE_KEY = 'sub2api:image-generation-history'
 const ADVANCED_SETTINGS_CACHE_KEY = 'sub2api:image-generation-advanced-settings'
-const HISTORY_LIMIT = 10
+const HISTORY_LIMIT = 1
 const FIXED_RESPONSE_FORMAT = 'url'
 const FIXED_PARTIAL_IMAGES = 2
 const DEFAULT_MODEL = 'gpt-image-2'
@@ -934,8 +936,15 @@ const promptHintKey = computed(() => {
 const maskEditorPanelClass = computed(() => [
   'space-y-3 rounded-2xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-900/95',
   maskEditorExpanded.value
-    ? 'fixed inset-3 z-[90] flex flex-col overflow-y-auto shadow-2xl sm:inset-6'
+    ? 'fixed inset-3 z-[90] flex min-h-0 flex-col overflow-hidden shadow-2xl sm:inset-6'
     : '',
+])
+
+const maskCanvasFrameClass = computed(() => [
+  'mx-auto w-full max-w-full rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-600 dark:bg-dark-900',
+  maskEditorExpanded.value
+    ? 'min-h-0 flex-1 overflow-auto'
+    : 'overflow-hidden',
 ])
 
 const hasDirtyResult = computed(() =>
@@ -1170,8 +1179,10 @@ async function submitGeneration() {
     activeHistoryId.value = ''
     const historyPersisted = persistCachedResult()
     appStore.showSuccess(t('imageGeneration.messages.generateSuccess', { count: images.length }))
-    if (!historyPersisted) {
-      appStore.showWarning(t('imageGeneration.messages.historySaveSkipped'))
+    if (historyPersisted) {
+      appStore.showWarning(t('imageGeneration.messages.saveGeneratedImagesSoon'), 8000)
+    } else {
+      appStore.showWarning(t('imageGeneration.messages.historySaveSkipped'), 8000)
     }
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {

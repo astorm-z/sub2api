@@ -975,7 +975,7 @@ export default {
   },
   imageGeneration: {
     title: 'AI Image Generation',
-    description: 'Use your own API key to generate, edit, or mask-edit images. Successful results are saved to browser history.',
+    description: 'Use your own API key to generate, edit, or mask-edit images. The latest successful result is kept temporarily in this browser.',
     endpointGenerate: 'Endpoint: /v1/images/generations',
     endpointEdit: 'Endpoint: /v1/images/edits',
     loadingKeys: 'Loading available API keys',
@@ -1074,9 +1074,9 @@ export default {
     },
     history: {
       title: 'History',
-      summary: 'The latest {max} results are saved locally in this browser. Current: {count}.',
+      summary: 'Only the latest {max} result(s) are kept locally in this browser. New generations overwrite older history. Current: {count}.',
       emptyTitle: 'No history yet',
-      emptyDescription: 'Successful generations will be saved here automatically.',
+      emptyDescription: 'Successful generations will temporarily keep the latest result here.',
       imageCount: '{count} image(s)',
       meta: '{mode} · {model} · {size}',
       emptyPrompt: 'No prompt recorded',
@@ -1086,7 +1086,8 @@ export default {
     },
     messages: {
       generateSuccess: '{count} image(s) generated',
-      historySaveSkipped: 'Images were generated, but browser storage is full, so this result was not saved to history.',
+      saveGeneratedImagesSoon: 'Please download the images or copy their links soon. This site does not store generated images, browser storage is limited, and history only keeps the latest result temporarily.',
+      historySaveSkipped: 'Images were generated, but browser storage is full, so this result was not saved to history. Please download the images or copy their links now.',
       cancelled: 'The request has been cancelled',
       cacheCleared: 'Image generation history has been cleared',
       linksCopied: 'All image links copied',
