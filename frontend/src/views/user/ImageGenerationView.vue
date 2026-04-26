@@ -40,14 +40,34 @@
             </div>
 
             <div class="space-y-1.5">
-              <label class="input-label">{{ t('imageGeneration.form.model') }}</label>
-              <Input
+              <label class="input-label">{{ t('imageGeneration.form.responseModel') }}</label>
+              <Select
+                v-model="responseModel"
+                :options="responseModelOptions"
+                :disabled="submitting || loadingModels || responseModelOptions.length === 0"
+                searchable
+                :placeholder="modelSelectPlaceholder"
+              />
+            </div>
+
+            <div class="space-y-1.5">
+              <label class="input-label">{{ t('imageGeneration.form.imageModel') }}</label>
+              <Select
                 v-model="model"
-                :disabled="submitting"
-                :placeholder="t('imageGeneration.form.modelPlaceholder')"
+                :options="imageModelOptions"
+                :disabled="submitting || loadingModels || imageModelOptions.length === 0"
+                searchable
+                :placeholder="modelSelectPlaceholder"
               />
             </div>
           </div>
+
+          <p
+            v-if="modelLoadMessage"
+            class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300"
+          >
+            {{ modelLoadMessage }}
+          </p>
 
           <TextArea
             v-model="prompt"
@@ -75,7 +95,7 @@
                 <label class="btn btn-secondary btn-sm cursor-pointer">
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/png,image/jpeg,image/webp"
                     :multiple="mode === 'edit'"
                     class="hidden"
                     :disabled="submitting"
@@ -243,24 +263,65 @@
                 v-model="size"
                 :options="sizeOptions"
                 :disabled="submitting"
+                searchable
               />
             </div>
 
-            <!-- Count input is temporarily hidden; requests always use DEFAULT_COUNT. -->
-            <!--
-            <div class="space-y-1.5">
-              <label class="input-label">{{ t('imageGeneration.form.count') }}</label>
-              <Input
-                v-model="n"
-                type="number"
-                :disabled="submitting"
-                min="1"
-                max="10"
-                step="1"
-                placeholder="1"
-              />
+            <div
+              v-if="isCustomSizeSelected"
+              class="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-3 dark:border-dark-700 dark:bg-dark-900/30 sm:grid-cols-2"
+            >
+              <div class="flex items-center gap-1 sm:col-span-2">
+                <label class="input-label mb-0">{{ t('imageGeneration.form.customSize') }}</label>
+                <HelpTooltip width-class="w-96">
+                  <template #trigger>
+                    <Icon
+                      name="questionCircle"
+                      size="sm"
+                      class="cursor-help text-gray-400 transition-colors hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400"
+                    />
+                  </template>
+                  <div class="space-y-1.5">
+                    <div class="font-semibold">{{ t('imageGeneration.form.customSizeHelpTitle') }}</div>
+                    <ul class="list-disc space-y-1 pl-4">
+                      <li>{{ t('imageGeneration.form.customSizeHelpMaxEdge') }}</li>
+                      <li>{{ t('imageGeneration.form.customSizeHelpMultiple') }}</li>
+                      <li>{{ t('imageGeneration.form.customSizeHelpRatio') }}</li>
+                      <li>{{ t('imageGeneration.form.customSizeHelpPixels') }}</li>
+                    </ul>
+                  </div>
+                </HelpTooltip>
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="input-label">{{ t('imageGeneration.form.customSizeWidth') }}</label>
+                <input
+                  v-model="customSizeWidth"
+                  type="number"
+                  min="16"
+                  max="3840"
+                  step="16"
+                  class="input w-full transition-all duration-200"
+                  :placeholder="t('imageGeneration.form.customSizeWidthPlaceholder')"
+                  :disabled="submitting"
+                />
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="input-label">{{ t('imageGeneration.form.customSizeHeight') }}</label>
+                <input
+                  v-model="customSizeHeight"
+                  type="number"
+                  min="16"
+                  max="3840"
+                  step="16"
+                  class="input w-full transition-all duration-200"
+                  :placeholder="t('imageGeneration.form.customSizeHeightPlaceholder')"
+                  :disabled="submitting"
+                />
+              </div>
             </div>
-            -->
+
           </div>
 
           <div class="rounded-2xl border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-900/30">
@@ -695,7 +756,6 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Select from '@/components/common/Select.vue'
-import Input from '@/components/common/Input.vue'
 import TextArea from '@/components/common/TextArea.vue'
 import { Icon } from '@/components/icons'
 import { useAppStore } from '@/stores/app'
@@ -734,8 +794,11 @@ interface ResultImage {
 interface CachedImageGenerationForm {
   mode: ImageMode
   prompt: string
+  responseModel: string
   model: string
   size: string
+  customSizeWidth: string
+  customSizeHeight: string
   n: string
   quality: string
   background: string
@@ -756,61 +819,126 @@ interface ImageGenerationHistoryEntry extends CachedImageGenerationResult {
   id: string
 }
 
-interface ImagesApiResponseDataItem {
+interface ImageGenerationStreamError {
+  message?: string
+  code?: string
+  type?: string
+}
+
+interface ImageGenerationStreamImageItem {
+  id?: string
+  type?: string
+  result?: string
   b64_json?: string
   url?: string
   revised_prompt?: string
-}
-
-interface ImagesApiResponse {
-  created?: number
-  data?: ImagesApiResponseDataItem[]
+  revisedPrompt?: string
   output_format?: string
 }
 
-interface ImageGenerationStreamError {
-  message?: string
+interface ImageGenerationStreamResponse {
+  output?: ImageGenerationStreamImageItem[]
+  error?: ImageGenerationStreamError
 }
 
 interface ImageGenerationStreamPayload {
   type?: string
+  result?: string
   url?: string
   b64_json?: string
+  partial_image_b64?: string
+  partial_image?: string
   revised_prompt?: string
+  revisedPrompt?: string
   partial_image_index?: number
   output_format?: string
   error?: ImageGenerationStreamError
+  response?: ImageGenerationStreamResponse
+  item?: ImageGenerationStreamImageItem
+}
+
+interface StreamImageCandidate {
+  key: string
+  index?: number
+  url?: string
+  b64?: string
+  revisedPrompt?: string
+  outputFormat?: string
+}
+
+interface OpenAIModelItem {
+  id?: string
+  display_name?: string
+  displayName?: string
+  type?: string
+  object?: string
 }
 
 const LEGACY_LOCAL_CACHE_KEY = 'sub2api:last-image-generation-result'
 const HISTORY_CACHE_KEY = 'sub2api:image-generation-history'
 const ADVANCED_SETTINGS_CACHE_KEY = 'sub2api:image-generation-advanced-settings'
 const HISTORY_LIMIT = 1
-const FIXED_RESPONSE_FORMAT = 'url'
-const FIXED_PARTIAL_IMAGES = 2
+const FIXED_PARTIAL_IMAGES = 0
+const DEFAULT_RESPONSE_MODEL = 'gpt-5.5'
 const DEFAULT_MODEL = 'gpt-image-2'
 const DEFAULT_SIZE = '1024x1024'
 const DEFAULT_COUNT = '1'
+const CUSTOM_SIZE_VALUE = 'custom'
+const DEFAULT_CUSTOM_SIZE_WIDTH = '1024'
+const DEFAULT_CUSTOM_SIZE_HEIGHT = '1024'
+const CUSTOM_SIZE_MAX_EDGE = 3840
+const CUSTOM_SIZE_MULTIPLE = 16
+const CUSTOM_SIZE_MAX_RATIO = 3
+const CUSTOM_SIZE_MIN_PIXELS = 655_360
+const CUSTOM_SIZE_MAX_PIXELS = 8_294_400
+const DEFAULT_OUTPUT_COMPRESSION = 100
+const DEFAULT_INPUT_FIDELITY = 'low'
 const DEFAULT_MASK_CANVAS_WIDTH = 1024
 const DEFAULT_MASK_CANVAS_HEIGHT = 1024
 const MAX_UNDO_STACK_SIZE = 20
 const MASK_SCROLL_LOCK_CLASS = 'image-generation-mask-editor-open'
+const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
+const INPUT_FIDELITY_UNSUPPORTED_IMAGE_MODELS = new Set(['gpt-image-2', 'gpt-image-1-mini'])
+const SIZE_PRESET_VALUES = new Set([
+  '1024x1024',
+  '2048x2048',
+  '2016x1344',
+  '1344x2016',
+  '2048x1536',
+  '1536x2048',
+  '2048x1152',
+  '1152x2048',
+  '2880x2880',
+  '3504x2336',
+  '2336x3504',
+  '3264x2448',
+  '2448x3264',
+  '3840x2160',
+  '2160x3840',
+])
 
 const { t, locale } = useI18n()
 const appStore = useAppStore()
 
 const loadingKeys = ref(false)
+const loadingModels = ref(false)
 const submitting = ref(false)
 const submitError = ref('')
+const modelLoadError = ref('')
 const eligibleKeys = ref<ApiKey[]>([])
+const responseModelOptions = ref<Array<{ value: string; label: string }>>([])
+const imageModelOptions = ref<Array<{ value: string; label: string }>>([])
 const resultImages = ref<ResultImage[]>([])
 const previewImageUrl = ref('')
 const previewImageTitle = ref('')
 const selectedKeyId = ref<number | null>(null)
 const mode = ref<ImageMode>('generate')
 const prompt = ref('')
+const responseModel = ref(DEFAULT_RESPONSE_MODEL)
 const model = ref(DEFAULT_MODEL)
 const size = ref(DEFAULT_SIZE)
+const customSizeWidth = ref<string | number>(DEFAULT_CUSTOM_SIZE_WIDTH)
+const customSizeHeight = ref<string | number>(DEFAULT_CUSTOM_SIZE_HEIGHT)
 const n = ref<string | number>(DEFAULT_COUNT)
 const quality = ref('')
 const background = ref('')
@@ -835,6 +963,7 @@ const maskEditorExpanded = ref(false)
 const maskUndoStackSize = ref(0)
 
 let abortController: AbortController | null = null
+let modelLoadRequestId = 0
 let suppressRestoreWatcher = false
 let maskSourceImageElement: HTMLImageElement | null = null
 let maskPointerActive = false
@@ -860,10 +989,22 @@ const maskToolOptions = computed<Array<{ value: MaskTool; label: string }>>(() =
 ])
 
 const sizeOptions = computed(() => [
-  { value: '1024x1024', label: '1024 × 1024' },
-  { value: '1536x1024', label: t('imageGeneration.form.sizeLandscape') },
-  { value: '1024x1536', label: t('imageGeneration.form.sizePortrait') },
-  { value: 'auto', label: 'auto' },
+  { value: '1024x1024', label: `1k - 1:1 (1024x1024) - ${t('imageGeneration.form.sizeSquare')}` },
+  { value: '2048x2048', label: `2k - 1:1 (2048x2048) - ${t('imageGeneration.form.sizeSquare')}` },
+  { value: '2016x1344', label: `2k - 3:2 (2016x1344) - ${t('imageGeneration.form.sizeLandscapeLabel')}` },
+  { value: '1344x2016', label: `2k - 2:3 (1344x2016) - ${t('imageGeneration.form.sizePortraitLabel')}` },
+  { value: '2048x1536', label: `2k - 4:3 (2048x1536) - ${t('imageGeneration.form.sizeLandscapeLabel')}` },
+  { value: '1536x2048', label: `2k - 3:4 (1536x2048) - ${t('imageGeneration.form.sizePortraitLabel')}` },
+  { value: '2048x1152', label: `2k - 16:9 (2048x1152) - ${t('imageGeneration.form.sizeLandscapeLabel')}` },
+  { value: '1152x2048', label: `2k - 9:16 (1152x2048) - ${t('imageGeneration.form.sizePortraitLabel')}` },
+  { value: '2880x2880', label: `4k - 1:1 (2880x2880) - ${t('imageGeneration.form.sizeSquare')}` },
+  { value: '3504x2336', label: `4k - 3:2 (3504x2336) - ${t('imageGeneration.form.sizeLandscapeLabel')}` },
+  { value: '2336x3504', label: `4k - 2:3 (2336x3504) - ${t('imageGeneration.form.sizePortraitLabel')}` },
+  { value: '3264x2448', label: `4k - 4:3 (3264x2448) - ${t('imageGeneration.form.sizeLandscapeLabel')}` },
+  { value: '2448x3264', label: `4k - 3:4 (2448x3264) - ${t('imageGeneration.form.sizePortraitLabel')}` },
+  { value: '3840x2160', label: `4k - 16:9 (3840x2160) - ${t('imageGeneration.form.sizeLandscapeLabel')}` },
+  { value: '2160x3840', label: `4k - 9:16 (2160x3840) - ${t('imageGeneration.form.sizePortraitLabel')}` },
+  { value: CUSTOM_SIZE_VALUE, label: t('imageGeneration.form.sizeCustom') },
 ])
 
 const qualityOptions = computed(() => [
@@ -901,6 +1042,21 @@ const selectedKey = computed(() =>
 )
 
 const primarySourceImage = computed(() => sourceImagePreviews.value[0] ?? null)
+const isCustomSizeSelected = computed(() => size.value === CUSTOM_SIZE_VALUE)
+
+const modelSelectPlaceholder = computed(() =>
+  loadingModels.value
+    ? `${t('common.loading')}...`
+    : t('imageGeneration.form.modelSelectPlaceholder'),
+)
+
+const modelLoadMessage = computed(() => {
+  if (!selectedKey.value || loadingModels.value) return ''
+  if (modelLoadError.value) return modelLoadError.value
+  if (responseModelOptions.value.length === 0) return t('imageGeneration.errors.noResponseModels')
+  if (imageModelOptions.value.length === 0) return t('imageGeneration.errors.noImageModels')
+  return ''
+})
 
 const sourceImagesHintKey = computed(() =>
   mode.value === 'mask'
@@ -916,8 +1072,10 @@ const sourceImagesLabelKey = computed(() =>
 
 const submitDisabled = computed(() => {
   if (!selectedKey.value || loadingKeys.value) return true
-  if (!prompt.value.trim()) return true
   if (submitting.value) return false
+  if (loadingModels.value || modelLoadMessage.value) return true
+  if (!responseModel.value || !model.value) return true
+  if (!prompt.value.trim()) return true
   return mode.value !== 'generate' && sourceImagePreviews.value.length === 0
 })
 
@@ -1005,12 +1163,16 @@ watch(maskEditorExpanded, (expanded) => {
   nextTick(() => renderMaskEditor())
 })
 
-watch([selectedKeyId, mode, prompt, model, size, n, quality, background, outputFormat, outputCompression, advancedOpen], () => {
+watch([selectedKeyId, mode, prompt, responseModel, model, size, customSizeWidth, customSizeHeight, n, quality, background, outputFormat, outputCompression, advancedOpen], () => {
   if (suppressRestoreWatcher || !restoredFromCache.value || submitting.value) {
     return
   }
   restoredFromCache.value = false
   activeHistoryId.value = ''
+})
+
+watch(selectedKeyId, () => {
+  void loadModelsForSelectedKey()
 })
 
 watch([quality, background, outputFormat, outputCompression, advancedOpen], () => {
@@ -1025,6 +1187,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  modelLoadRequestId += 1
   cancelGeneration()
   window.removeEventListener('keydown', handleGlobalKeydown)
   clearLocalPreviews(sourceImagePreviews.value)
@@ -1049,24 +1212,158 @@ async function loadEligibleKeys() {
     eligibleKeys.value = activeKeys.filter((key) =>
       key.status === 'active' &&
       key.group?.platform === 'openai' &&
-      key.group?.status === 'active',
+      key.group?.status === 'active' &&
+      key.group?.subscription_type === 'standard',
     )
 
     if (selectedKeyId.value && eligibleKeys.value.some((key) => key.id === selectedKeyId.value)) {
+      await loadModelsForSelectedKey()
       return
     }
 
-    selectedKeyId.value = eligibleKeys.value[0]?.id ?? null
+    const nextKeyId = eligibleKeys.value[0]?.id ?? null
+    if (selectedKeyId.value === nextKeyId) {
+      await loadModelsForSelectedKey()
+    } else {
+      selectedKeyId.value = nextKeyId
+    }
+    if (!nextKeyId) {
+      clearModelOptions()
+    }
   } catch (error: unknown) {
+    clearModelOptions()
     appStore.showError(extractApiErrorMessage(error, t('imageGeneration.errors.loadKeysFailed')))
   } finally {
     loadingKeys.value = false
   }
 }
 
+async function loadModelsForSelectedKey() {
+  const requestId = ++modelLoadRequestId
+  const key = selectedKey.value
+  modelLoadError.value = ''
+  clearModelOptions()
+
+  if (!key) {
+    loadingModels.value = false
+    return
+  }
+
+  loadingModels.value = true
+  try {
+    const response = await fetch('/v1/models', {
+      headers: {
+        Authorization: `Bearer ${key.key}`,
+      },
+    })
+    const responseText = await response.text()
+    if (!response.ok) {
+      throw new Error(extractImagesErrorMessage(responseText, response.status))
+    }
+
+    let payload: unknown
+    try {
+      payload = responseText.trim() ? JSON.parse(responseText) : {}
+    } catch {
+      throw new Error(t('imageGeneration.errors.modelsLoadFailed'))
+    }
+
+    const allModels = normalizeOpenAIModelOptions(payload)
+    const nextResponseModelOptions = allModels.filter((option) => !isImageGenerationModelId(option.value))
+    const nextImageModelOptions = allModels.filter((option) => isImageGenerationModelId(option.value))
+    if (requestId !== modelLoadRequestId) return
+
+    responseModelOptions.value = nextResponseModelOptions
+    imageModelOptions.value = nextImageModelOptions
+    responseModel.value = choosePreferredModelValue(nextResponseModelOptions, responseModel.value, DEFAULT_RESPONSE_MODEL)
+    model.value = choosePreferredModelValue(nextImageModelOptions, model.value, DEFAULT_MODEL)
+  } catch (error: unknown) {
+    if (requestId !== modelLoadRequestId) return
+    clearModelOptions()
+    modelLoadError.value = extractApiErrorMessage(error, t('imageGeneration.errors.modelsLoadFailed'))
+  } finally {
+    if (requestId === modelLoadRequestId) {
+      loadingModels.value = false
+    }
+  }
+}
+
+function clearModelOptions() {
+  responseModelOptions.value = []
+  imageModelOptions.value = []
+  responseModel.value = ''
+  model.value = ''
+}
+
+function normalizeOpenAIModelOptions(payload: unknown): Array<{ value: string; label: string }> {
+  let data: unknown[] = []
+  if (isRecord(payload) && Array.isArray(payload.data)) {
+    data = payload.data
+  } else if (Array.isArray(payload)) {
+    data = payload
+  }
+  const seenModelIds = new Set<string>()
+  const options: Array<{ value: string; label: string }> = []
+
+  for (const item of data) {
+    const modelItem = normalizeOpenAIModelItem(item)
+    if (!modelItem || seenModelIds.has(modelItem.id)) {
+      continue
+    }
+    seenModelIds.add(modelItem.id)
+    options.push({
+      value: modelItem.id,
+      label: modelItem.displayName && modelItem.displayName !== modelItem.id
+        ? `${modelItem.displayName} (${modelItem.id})`
+        : modelItem.id,
+    })
+  }
+
+  return options
+}
+
+function normalizeOpenAIModelItem(value: unknown): { id: string; displayName: string } | null {
+  if (typeof value === 'string') {
+    const id = value.trim()
+    return id ? { id, displayName: id } : null
+  }
+  if (!isRecord(value)) return null
+  const item = value as OpenAIModelItem
+  const id = trimmedStringValue(item.id)
+  if (!id) return null
+  return {
+    id,
+    displayName: trimmedStringValue(item.display_name) || trimmedStringValue(item.displayName) || id,
+  }
+}
+
+function isImageGenerationModelId(value: string): boolean {
+  const modelId = value.trim().toLowerCase()
+  return modelId.startsWith('gpt-image-') || modelId.startsWith('chatgpt-image')
+}
+
+function choosePreferredModelValue(
+  options: Array<{ value: string; label: string }>,
+  currentValue: string,
+  preferredValue: string,
+): string {
+  const optionValues = new Set(options.map((option) => option.value))
+  if (currentValue && optionValues.has(currentValue)) return currentValue
+  if (optionValues.has(preferredValue)) return preferredValue
+  return options[0]?.value ?? ''
+}
+
+function hasModelOption(options: Array<{ value: string; label: string }>, value: string): boolean {
+  return options.some((option) => option.value === value)
+}
+
 function handleSourceImagesChange(event: Event) {
   const input = event.target as HTMLInputElement
-  const files = Array.from(input.files ?? []).filter((file) => file.type.startsWith('image/'))
+  const selectedFiles = Array.from(input.files ?? [])
+  const files = selectedFiles.filter(isSupportedImageFile)
+  if (selectedFiles.length !== files.length) {
+    appStore.showWarning(t('imageGeneration.errors.unsupportedImageFormat'))
+  }
   if (files.length === 0) {
     input.value = ''
     return
@@ -1121,8 +1418,11 @@ function resetForm() {
   const cachedAdvancedSettings = readAdvancedSettings()
   mode.value = 'generate'
   prompt.value = ''
-  model.value = DEFAULT_MODEL
+  responseModel.value = choosePreferredModelValue(responseModelOptions.value, '', DEFAULT_RESPONSE_MODEL)
+  model.value = choosePreferredModelValue(imageModelOptions.value, '', DEFAULT_MODEL)
   size.value = DEFAULT_SIZE
+  customSizeWidth.value = DEFAULT_CUSTOM_SIZE_WIDTH
+  customSizeHeight.value = DEFAULT_CUSTOM_SIZE_HEIGHT
   n.value = DEFAULT_COUNT
   applyAdvancedSettings(cachedAdvancedSettings ?? createDefaultAdvancedSettings())
   submitError.value = ''
@@ -1152,11 +1452,8 @@ async function submitGeneration() {
   abortController = new AbortController()
 
   try {
-    const endpoint = mode.value === 'generate'
-      ? '/v1/images/generations'
-      : '/v1/images/edits'
     const request = await buildRequestInit(selectedKey.value.key)
-    const response = await fetch(endpoint, {
+    const response = await fetch('/v1/responses', {
       ...request,
       signal: abortController.signal,
     })
@@ -1166,9 +1463,11 @@ async function submitGeneration() {
       throw new Error(extractImagesErrorMessage(responseText, response.status))
     }
 
-    const images = isEventStreamResponse(response)
-      ? await consumeImageGenerationStream(response)
-      : await consumeImageGenerationJson(response)
+    if (!isEventStreamResponse(response)) {
+      throw new Error(t('imageGeneration.errors.streamResponseRequired'))
+    }
+
+    const images = await consumeImageGenerationStream(response)
     if (images.length === 0) {
       throw new Error(t('imageGeneration.errors.noImagesReturned'))
     }
@@ -1212,6 +1511,12 @@ function cancelGeneration() {
 
 function validateGenerationForm(): string {
   if (!selectedKey.value) return t('imageGeneration.errors.keyRequired')
+  if (loadingModels.value) return t('imageGeneration.errors.modelsLoading')
+  if (modelLoadError.value) return modelLoadError.value
+  if (responseModelOptions.value.length === 0) return t('imageGeneration.errors.noResponseModels')
+  if (imageModelOptions.value.length === 0) return t('imageGeneration.errors.noImageModels')
+  if (!hasModelOption(responseModelOptions.value, responseModel.value)) return t('imageGeneration.errors.responseModelRequired')
+  if (!hasModelOption(imageModelOptions.value, model.value)) return t('imageGeneration.errors.imageModelRequired')
   if (!trimmedStringValue(prompt.value)) return t('imageGeneration.errors.promptRequired')
   if (mode.value !== 'generate' && sourceImagePreviews.value.length === 0) {
     return t(mode.value === 'mask'
@@ -1220,6 +1525,16 @@ function validateGenerationForm(): string {
   }
   if (mode.value === 'mask' && !maskHasDrawing.value) {
     return t('imageGeneration.errors.maskDrawingRequired')
+  }
+  if (isGptImage2TransparentBackground()) {
+    return t('imageGeneration.errors.gptImage2TransparentUnsupported')
+  }
+  if (sourceImagePreviews.value.some((preview) => !isSupportedImageFile(preview.file))) {
+    return t('imageGeneration.errors.unsupportedImageFormat')
+  }
+  const customSizeError = validateCustomSize()
+  if (customSizeError) {
+    return customSizeError
   }
 
   const compressionValue = trimmedStringValue(outputCompression.value)
@@ -1233,80 +1548,109 @@ function validateGenerationForm(): string {
   return ''
 }
 
+function validateCustomSize(): string {
+  if (!isCustomSizeSelected.value) return ''
+  const dimensions = readCustomSizeDimensions()
+  if (!dimensions) {
+    return t('imageGeneration.errors.customSizeRequired')
+  }
+  const { width, height } = dimensions
+  const longEdge = Math.max(width, height)
+  const shortEdge = Math.min(width, height)
+  const pixels = width * height
+
+  if (longEdge > CUSTOM_SIZE_MAX_EDGE) {
+    return t('imageGeneration.errors.customSizeMaxEdge', { max: CUSTOM_SIZE_MAX_EDGE })
+  }
+  if (width % CUSTOM_SIZE_MULTIPLE !== 0 || height % CUSTOM_SIZE_MULTIPLE !== 0) {
+    return t('imageGeneration.errors.customSizeMultiple', { multiple: CUSTOM_SIZE_MULTIPLE })
+  }
+  if (longEdge / shortEdge > CUSTOM_SIZE_MAX_RATIO) {
+    return t('imageGeneration.errors.customSizeRatio', { ratio: CUSTOM_SIZE_MAX_RATIO })
+  }
+  if (pixels < CUSTOM_SIZE_MIN_PIXELS || pixels > CUSTOM_SIZE_MAX_PIXELS) {
+    return t('imageGeneration.errors.customSizePixels', {
+      min: CUSTOM_SIZE_MIN_PIXELS.toLocaleString(),
+      max: CUSTOM_SIZE_MAX_PIXELS.toLocaleString(),
+    })
+  }
+  return ''
+}
+
 async function buildRequestInit(apiKey: string) {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
   }
 
-  if (mode.value === 'generate') {
-    headers['Content-Type'] = 'application/json'
-    return {
-      method: 'POST',
-      headers,
-    body: JSON.stringify(buildJsonPayload()),
-    }
-  }
-
-  const formData = await buildEditFormData()
   return {
     method: 'POST',
     headers,
-    body: formData,
+    body: JSON.stringify(await buildResponsesPayload()),
   }
 }
 
-function buildJsonPayload() {
-  const payload: Record<string, string | number | boolean> = {
-    prompt: trimmedStringValue(prompt.value),
+async function buildResponsesPayload() {
+  const outputFormatValue = resolveOutputFormatValue()
+  const tool: Record<string, unknown> = {
+    type: 'image_generation',
     model: trimmedStringValue(model.value) || DEFAULT_MODEL,
-    response_format: FIXED_RESPONSE_FORMAT,
-    stream: true,
+    action: mode.value === 'mask' ? 'edit' : 'generate',
+    size: resolveSizeValue(),
+    quality: quality.value || 'auto',
+    output_format: outputFormatValue,
+    moderation: 'low',
+    partial_images: FIXED_PARTIAL_IMAGES,
   }
 
-  payload.n = Number(DEFAULT_COUNT)
-  if (size.value) payload.size = size.value
-  if (quality.value) payload.quality = quality.value
-  if (background.value) payload.background = background.value
-  if (outputFormat.value) payload.output_format = outputFormat.value
-  payload.partial_images = FIXED_PARTIAL_IMAGES
-  payload.moderation = 'low'
+  if (!isGptImage2TransparentBackground()) {
+    tool.background = background.value || 'auto'
+  }
 
-  const compression = normalizeNonNegativeInt(outputCompression.value)
-  if (compression !== null) payload.output_compression = compression
+  if (outputFormatValue === 'jpeg' || outputFormatValue === 'webp') {
+    tool.output_compression = normalizeOutputCompression(outputCompression.value) ?? DEFAULT_OUTPUT_COMPRESSION
+  }
 
-  return payload
-}
+  if (mode.value !== 'generate' && !isInputFidelityUnsupportedImageModel()) {
+    tool.input_fidelity = DEFAULT_INPUT_FIDELITY
+  }
 
-async function buildEditFormData() {
-  const formData = new FormData()
-  formData.append('prompt', trimmedStringValue(prompt.value))
-  formData.append('model', trimmedStringValue(model.value) || DEFAULT_MODEL)
-  formData.append('response_format', FIXED_RESPONSE_FORMAT)
-  formData.append('stream', 'true')
-
-  formData.append('n', DEFAULT_COUNT)
-  if (size.value) formData.append('size', size.value)
-  if (quality.value) formData.append('quality', quality.value)
-  if (background.value) formData.append('background', background.value)
-  if (outputFormat.value) formData.append('output_format', outputFormat.value)
-  formData.append('partial_images', String(FIXED_PARTIAL_IMAGES))
-  formData.append('moderation', 'low')
-
-  const compression = normalizeNonNegativeInt(outputCompression.value)
-  if (compression !== null) formData.append('output_compression', String(compression))
+  const content: Array<Record<string, string>> = [
+    { type: 'input_text', text: trimmedStringValue(prompt.value) },
+  ]
 
   const imagesToSubmit = mode.value === 'mask'
     ? sourceImagePreviews.value.slice(0, 1)
-    : sourceImagePreviews.value
+    : mode.value === 'edit'
+      ? sourceImagePreviews.value
+      : []
+
   for (const item of imagesToSubmit) {
-    formData.append('image', item.file, item.file.name)
+    content.push({
+      type: 'input_image',
+      image_url: await fileToDataUrl(item.file),
+      detail: 'auto',
+    })
   }
 
   if (mode.value === 'mask') {
     const maskBlob = await exportMaskBlob()
-    formData.append('mask', maskBlob, 'mask.png')
+    tool.input_image_mask = { image_url: await blobToDataUrl(maskBlob) }
   }
-  return formData
+
+  return {
+    model: trimmedStringValue(responseModel.value) || DEFAULT_RESPONSE_MODEL,
+    input: [
+      {
+        role: 'user',
+        content,
+      },
+    ],
+    tools: [tool],
+    tool_choice: { type: 'image_generation' },
+    store: false,
+    stream: true,
+  }
 }
 
 function isEventStreamResponse(response: Response): boolean {
@@ -1314,10 +1658,73 @@ function isEventStreamResponse(response: Response): boolean {
   return contentType.toLowerCase().includes('text/event-stream')
 }
 
-async function consumeImageGenerationJson(response: Response): Promise<ResultImage[]> {
-  const responseText = await response.text()
-  const payload = JSON.parse(responseText) as ImagesApiResponse
-  return normalizeResponseImages(payload)
+function isSupportedImageFile(file: File): boolean {
+  return SUPPORTED_IMAGE_TYPES.has(file.type)
+}
+
+function resolveOutputFormatValue(): string {
+  return trimmedStringValue(outputFormat.value) || 'png'
+}
+
+function isGptImage2TransparentBackground(): boolean {
+  return trimmedStringValue(model.value).toLowerCase() === 'gpt-image-2' &&
+    trimmedStringValue(background.value).toLowerCase() === 'transparent'
+}
+
+function isInputFidelityUnsupportedImageModel(): boolean {
+  return INPUT_FIDELITY_UNSUPPORTED_IMAGE_MODELS.has(trimmedStringValue(model.value).toLowerCase())
+}
+
+function resolveSizeValue(): string {
+  if (!isCustomSizeSelected.value) {
+    return trimmedStringValue(size.value) || DEFAULT_SIZE
+  }
+  const dimensions = readCustomSizeDimensions()
+  if (!dimensions) {
+    return DEFAULT_SIZE
+  }
+  return `${dimensions.width}x${dimensions.height}`
+}
+
+function readCustomSizeDimensions(): { width: number; height: number } | null {
+  const width = parseIntegerString(customSizeWidth.value)
+  const height = parseIntegerString(customSizeHeight.value)
+  if (width === null || height === null || width <= 0 || height <= 0) {
+    return null
+  }
+  return { width, height }
+}
+
+function parseSizeValue(value: string): { width: string; height: string } | null {
+  const match = /^(\d+)x(\d+)$/i.exec(value.trim())
+  if (!match) return null
+  return {
+    width: match[1],
+    height: match[2],
+  }
+}
+
+function fileToDataUrl(file: File): Promise<string> {
+  if (!isSupportedImageFile(file)) {
+    return Promise.reject(new Error(t('imageGeneration.errors.unsupportedImageFormat')))
+  }
+  return blobToDataUrl(file)
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : ''
+      if (result) {
+        resolve(result)
+      } else {
+        reject(new Error(t('imageGeneration.errors.generateFailed')))
+      }
+    }
+    reader.onerror = () => reject(new Error(t('imageGeneration.errors.generateFailed')))
+    reader.readAsDataURL(blob)
+  })
 }
 
 async function consumeImageGenerationStream(response: Response): Promise<ResultImage[]> {
@@ -1328,6 +1735,7 @@ async function consumeImageGenerationStream(response: Response): Promise<ResultI
 
   const decoder = new TextDecoder()
   const completedImages: ResultImage[] = []
+  const completedImageKeys = new Set<string>()
   let completedCount = 0
   let buffer = ''
   let currentEvent = ''
@@ -1356,23 +1764,31 @@ async function consumeImageGenerationStream(response: Response): Promise<ResultI
 
     const payloadType = trimmedStringValue(payload.type)
     const resolvedEvent = eventName || payloadType
-    if (resolvedEvent === 'error' || payloadType === 'error') {
-      throw new Error(trimmedStringValue(payload.error?.message) || t('imageGeneration.errors.generateFailed'))
+    if (resolvedEvent === 'error' || payloadType === 'error' || payloadType === 'response.failed') {
+      throw new Error(extractStreamErrorMessage(payload))
     }
 
-    if (resolvedEvent.endsWith('.partial_image') || payloadType.endsWith('.partial_image')) {
-      const partialIndex = Number.isInteger(payload.partial_image_index)
-        ? Number(payload.partial_image_index)
+    const partialCandidate = extractPartialImageCandidate(payload, resolvedEvent)
+    if (partialCandidate) {
+      const partialIndex = Number.isInteger(partialCandidate?.index)
+        ? Number(partialCandidate?.index)
         : resultImages.value.length
-      const partialImage = createStreamResultImage(payload, partialIndex, true)
-      if (!partialImage) return
-      upsertStreamResultImage(partialImage, partialIndex)
-      return
+      const partialImage = createStreamResultImage(partialCandidate, partialIndex, true)
+      if (partialImage) {
+        upsertStreamResultImage(partialImage, partialIndex)
+      }
+      if (resolvedEvent.includes('partial_image') || payloadType.includes('partial_image')) {
+        return
+      }
     }
 
-    if (resolvedEvent.endsWith('.completed') || payloadType.endsWith('.completed')) {
-      const completedImage = createStreamResultImage(payload, completedCount, false)
+    for (const candidate of extractFinalImageCandidates(payload, resolvedEvent)) {
+      if (completedImageKeys.has(candidate.key)) {
+        continue
+      }
+      const completedImage = createStreamResultImage(candidate, completedCount, false)
       if (!completedImage) return
+      completedImageKeys.add(candidate.key)
       upsertStreamResultImage(completedImage, completedCount)
       completedImages.push(completedImage)
       completedCount += 1
@@ -1437,31 +1853,138 @@ async function consumeImageGenerationStream(response: Response): Promise<ResultI
   return completedImages
 }
 
-function createStreamResultImage(
+function extractStreamErrorMessage(payload: ImageGenerationStreamPayload): string {
+  return trimmedStringValue(payload.response?.error?.message) ||
+    trimmedStringValue(payload.error?.message) ||
+    trimmedStringValue(payload.response?.error?.code) ||
+    trimmedStringValue(payload.error?.code) ||
+    t('imageGeneration.errors.generateFailed')
+}
+
+function extractPartialImageCandidate(
   payload: ImageGenerationStreamPayload,
+  resolvedEvent: string,
+): StreamImageCandidate | null {
+  let candidate: StreamImageCandidate | null = null
+  walkStreamValue(payload, (value) => {
+    if (candidate || !isRecord(value)) return
+    const type = trimmedStringValue(value.type)
+    const hasPartialIndex = Object.prototype.hasOwnProperty.call(value, 'partial_image_index')
+    const looksPartial = type.includes('partial_image') || resolvedEvent.includes('partial_image') || hasPartialIndex
+    if (!looksPartial) return
+
+    const b64 = trimmedStringValue(value.b64_json) ||
+      trimmedStringValue(value.partial_image_b64) ||
+      trimmedStringValue(value.partial_image) ||
+      trimmedStringValue(value.result)
+    const url = trimmedStringValue(value.url)
+    if (!b64 && !url) return
+
+    const index = typeof value.partial_image_index === 'number' && Number.isInteger(value.partial_image_index)
+      ? value.partial_image_index
+      : undefined
+    candidate = {
+      key: streamImageCandidateKey(url, b64, `partial-${index ?? 0}`),
+      index,
+      url,
+      b64,
+      revisedPrompt: streamRevisedPromptValue(value),
+      outputFormat: trimmedStringValue(value.output_format),
+    }
+  })
+  return candidate
+}
+
+function extractFinalImageCandidates(
+  payload: ImageGenerationStreamPayload,
+  resolvedEvent: string,
+): StreamImageCandidate[] {
+  const candidates: StreamImageCandidate[] = []
+  walkStreamValue(payload, (value) => {
+    const candidate = streamValueToFinalCandidate(value, resolvedEvent, candidates.length)
+    if (candidate) candidates.push(candidate)
+  })
+  return candidates
+}
+
+function streamValueToFinalCandidate(
+  value: unknown,
+  resolvedEvent: string,
+  index: number,
+): StreamImageCandidate | null {
+  if (!isRecord(value)) return null
+
+  const type = trimmedStringValue(value.type)
+  const effectiveType = type || resolvedEvent
+  const isToolResult = effectiveType === 'image_generation_call'
+  const isLegacyCompleted = effectiveType === 'image_generation.completed' || effectiveType === 'image_edit.completed'
+  if (!isToolResult && !isLegacyCompleted) return null
+
+  const b64 = isToolResult
+    ? trimmedStringValue(value.result) || trimmedStringValue(value.b64_json)
+    : trimmedStringValue(value.b64_json) || trimmedStringValue(value.result)
+  const url = trimmedStringValue(value.url)
+  if (!b64 && !url) return null
+
+  return {
+    key: streamImageCandidateKey(url, b64, trimmedStringValue(value.id) || `${effectiveType}-${index}`),
+    url,
+    b64,
+    revisedPrompt: streamRevisedPromptValue(value),
+    outputFormat: trimmedStringValue(value.output_format),
+  }
+}
+
+function streamRevisedPromptValue(value: Record<string, unknown>): string {
+  return trimmedStringValue(value.revised_prompt) || trimmedStringValue(value.revisedPrompt)
+}
+
+function walkStreamValue(value: unknown, visitor: (value: unknown) => void) {
+  visitor(value)
+  if (!value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      walkStreamValue(item, visitor)
+    }
+    return
+  }
+  for (const item of Object.values(value)) {
+    walkStreamValue(item, visitor)
+  }
+}
+
+function streamImageCandidateKey(url: string, b64: string, fallback: string): string {
+  if (url) return `url:${url}`
+  if (b64) return `b64:${b64.slice(0, 96)}`
+  return `fallback:${fallback}`
+}
+
+function createStreamResultImage(
+  candidate: StreamImageCandidate | null,
   index: number,
   isPartial: boolean,
 ): ResultImage | null {
-  const outputFormat = trimmedStringValue(payload.output_format) || 'png'
+  if (!candidate) return null
+  const outputFormat = trimmedStringValue(candidate.outputFormat) || resolveOutputFormatValue()
   const mimeType = resolveMimeType(outputFormat)
-  const url = normalizeStreamImageUrl(payload, mimeType)
+  const url = normalizeStreamImageUrl(candidate, mimeType)
   if (!url) return null
 
   return {
     url,
     mimeType: detectMimeTypeFromUrl(url, mimeType),
     fileName: buildImageFileName(index, url, mimeType),
-    revisedPrompt: trimmedStringValue(payload.revised_prompt) || undefined,
+    revisedPrompt: trimmedStringValue(candidate.revisedPrompt) || undefined,
     isPartial,
   }
 }
 
-function normalizeStreamImageUrl(payload: ImageGenerationStreamPayload, mimeType: string): string {
-  const directUrl = trimmedStringValue(payload.url)
+function normalizeStreamImageUrl(candidate: StreamImageCandidate, mimeType: string): string {
+  const directUrl = trimmedStringValue(candidate.url)
   if (directUrl) {
     return directUrl
   }
-  const b64 = trimmedStringValue(payload.b64_json)
+  const b64 = trimmedStringValue(candidate.b64)
   if (!b64) {
     return ''
   }
@@ -1482,6 +2005,14 @@ function normalizeNonNegativeInt(value: unknown): number | null {
   if (!trimmedStringValue(value)) return null
   const parsed = parseIntegerString(value)
   if (parsed === null || parsed < 0) {
+    return null
+  }
+  return parsed
+}
+
+function normalizeOutputCompression(value: unknown): number | null {
+  const parsed = normalizeNonNegativeInt(value)
+  if (parsed === null || parsed > 100) {
     return null
   }
   return parsed
@@ -1826,36 +2357,6 @@ function extractImagesErrorMessage(responseText: string, status: number): string
   }
 }
 
-function normalizeResponseImages(payload: ImagesApiResponse): ResultImage[] {
-  const detectedFormat = payload.output_format || outputFormat.value || 'png'
-  const mimeType = resolveMimeType(detectedFormat)
-  const items = Array.isArray(payload.data) ? payload.data : []
-
-  return items.reduce<ResultImage[]>((images, item, index) => {
-    const dataUrl = normalizeImageUrl(item, mimeType)
-    if (!dataUrl) {
-      return images
-    }
-    images.push({
-        url: dataUrl,
-        mimeType: detectMimeTypeFromUrl(dataUrl, mimeType),
-        fileName: buildImageFileName(index, dataUrl, mimeType),
-        revisedPrompt: item.revised_prompt?.trim() || undefined,
-      })
-    return images
-  }, [])
-}
-
-function normalizeImageUrl(item: ImagesApiResponseDataItem, mimeType: string): string {
-  if (item.b64_json) {
-    return `data:${mimeType};base64,${item.b64_json}`
-  }
-  if (item.url) {
-    return item.url
-  }
-  return ''
-}
-
 function resolveMimeType(format: string): string {
   const normalized = format.trim().toLowerCase()
   switch (normalized) {
@@ -1911,8 +2412,11 @@ function captureCurrentForm(): CachedImageGenerationForm {
   return {
     mode: mode.value,
     prompt: stringValue(prompt.value),
+    responseModel: stringValue(responseModel.value),
     model: stringValue(model.value),
     size: stringValue(size.value),
+    customSizeWidth: stringValue(customSizeWidth.value),
+    customSizeHeight: stringValue(customSizeHeight.value),
     n: DEFAULT_COUNT,
     quality: stringValue(quality.value),
     background: stringValue(background.value),
@@ -2036,17 +2540,62 @@ function normalizeCachedResult(value: unknown): CachedImageGenerationResult | nu
 
 function normalizeCachedForm(value: Record<string, unknown>): CachedImageGenerationForm {
   const storedMode = stringValue(value.mode)
+  const normalizedSize = normalizeCachedSizeSettings(value)
   return {
     mode: storedMode === 'edit' || storedMode === 'mask' ? storedMode : 'generate',
     prompt: stringValue(value.prompt),
+    responseModel: stringValue(value.responseModel) || DEFAULT_RESPONSE_MODEL,
     model: stringValue(value.model) || DEFAULT_MODEL,
-    size: stringValue(value.size) || DEFAULT_SIZE,
+    size: normalizedSize.size,
+    customSizeWidth: normalizedSize.customSizeWidth,
+    customSizeHeight: normalizedSize.customSizeHeight,
     n: stringValue(value.n) || DEFAULT_COUNT,
     quality: normalizeOptionValue(stringValue(value.quality), ['', 'low', 'medium', 'high']),
     background: normalizeOptionValue(stringValue(value.background), ['', 'transparent', 'opaque', 'auto']),
     outputFormat: normalizeOptionValue(stringValue(value.outputFormat), ['', 'png', 'jpeg', 'webp']),
     outputCompression: stringValue(value.outputCompression),
     advancedOpen: value.advancedOpen === true,
+  }
+}
+
+function normalizeCachedSizeSettings(value: Record<string, unknown>): {
+  size: string
+  customSizeWidth: string
+  customSizeHeight: string
+} {
+  const storedSize = stringValue(value.size)
+  const storedCustomWidth = stringValue(value.customSizeWidth) || DEFAULT_CUSTOM_SIZE_WIDTH
+  const storedCustomHeight = stringValue(value.customSizeHeight) || DEFAULT_CUSTOM_SIZE_HEIGHT
+
+  if (storedSize === CUSTOM_SIZE_VALUE) {
+    return {
+      size: CUSTOM_SIZE_VALUE,
+      customSizeWidth: storedCustomWidth,
+      customSizeHeight: storedCustomHeight,
+    }
+  }
+
+  if (SIZE_PRESET_VALUES.has(storedSize)) {
+    return {
+      size: storedSize,
+      customSizeWidth: storedCustomWidth,
+      customSizeHeight: storedCustomHeight,
+    }
+  }
+
+  const parsedSize = parseSizeValue(storedSize)
+  if (parsedSize) {
+    return {
+      size: CUSTOM_SIZE_VALUE,
+      customSizeWidth: parsedSize.width,
+      customSizeHeight: parsedSize.height,
+    }
+  }
+
+  return {
+    size: DEFAULT_SIZE,
+    customSizeWidth: storedCustomWidth,
+    customSizeHeight: storedCustomHeight,
   }
 }
 
@@ -2157,8 +2706,11 @@ function restoreHistoryEntry(entry: ImageGenerationHistoryEntry) {
   selectedKeyId.value = entry.selectedKeyId
   mode.value = entry.form.mode
   prompt.value = entry.form.prompt
+  responseModel.value = entry.form.responseModel
   model.value = entry.form.model
   size.value = entry.form.size
+  customSizeWidth.value = entry.form.customSizeWidth
+  customSizeHeight.value = entry.form.customSizeHeight
   n.value = DEFAULT_COUNT
   quality.value = entry.form.quality
   background.value = entry.form.background
@@ -2189,15 +2741,22 @@ function formatHistoryMeta(entry: ImageGenerationHistoryEntry): string {
     : entry.form.mode === 'mask'
       ? t('imageGeneration.form.modeMask')
       : t('imageGeneration.form.modeEdit')
-  const modelLabel = entry.form.model || DEFAULT_MODEL
-  const sizeLabel = entry.form.size === 'auto'
-    ? t('imageGeneration.form.sizeAuto')
-    : entry.form.size || t('imageGeneration.form.sizeAuto')
+  const responseModelLabel = entry.form.responseModel || DEFAULT_RESPONSE_MODEL
+  const imageModelLabel = entry.form.model || DEFAULT_MODEL
+  const sizeLabel = formatHistorySize(entry.form)
   return t('imageGeneration.history.meta', {
     mode: modeLabel,
-    model: modelLabel,
+    responseModel: responseModelLabel,
+    imageModel: imageModelLabel,
     size: sizeLabel,
   })
+}
+
+function formatHistorySize(form: CachedImageGenerationForm): string {
+  if (form.size === CUSTOM_SIZE_VALUE) {
+    return `${form.customSizeWidth}x${form.customSizeHeight}`
+  }
+  return form.size || DEFAULT_SIZE
 }
 
 async function copyAllImageLinks() {
