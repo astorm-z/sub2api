@@ -709,8 +709,9 @@
         <Transition name="fade">
           <div
             v-if="previewImageUrl"
-            class="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4"
+            class="fixed inset-0 z-[100] flex items-center justify-center overflow-hidden bg-black/80 p-4"
             @click.self="closePreview"
+            @wheel.prevent="handlePreviewWheel"
           >
             <button
               type="button"
@@ -726,9 +727,17 @@
               {{ previewImageTitle }}
             </div>
             <img
+              ref="previewImageRef"
               :src="previewImageUrl"
               :alt="previewImageTitle || 'preview'"
-              class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+              class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl will-change-transform"
+              :style="previewImageStyle"
+              @pointerdown="handlePreviewPointerDown"
+              @pointermove="handlePreviewPointerMove"
+              @pointerup="finishPreviewDrag"
+              @pointercancel="finishPreviewDrag"
+              @lostpointercapture="finishPreviewDrag"
+              @dragstart.prevent
             />
           </div>
         </Transition>
@@ -749,6 +758,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { keysAPI } from '@/api/keys'
 import type { ApiKey } from '@/types'
@@ -900,6 +910,10 @@ const DEFAULT_MASK_CANVAS_WIDTH = 1024
 const DEFAULT_MASK_CANVAS_HEIGHT = 1024
 const MAX_UNDO_STACK_SIZE = 20
 const MASK_SCROLL_LOCK_CLASS = 'image-generation-mask-editor-open'
+const PREVIEW_MIN_ZOOM = 0.25
+const PREVIEW_MAX_ZOOM = 8
+const PREVIEW_WHEEL_ZOOM_SENSITIVITY = 0.0006
+const PREVIEW_MAX_WHEEL_DELTA = 180
 const SUPPORTED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp'])
 const INPUT_FIDELITY_UNSUPPORTED_IMAGE_MODELS = new Set(['gpt-image-2', 'gpt-image-1-mini'])
 const SIZE_PRESET_VALUES = new Set([
@@ -934,6 +948,17 @@ const imageModelOptions = ref<Array<{ value: string; label: string }>>([])
 const resultImages = ref<ResultImage[]>([])
 const previewImageUrl = ref('')
 const previewImageTitle = ref('')
+const previewImageRef = ref<HTMLImageElement | null>(null)
+const previewImageZoom = ref(1)
+const previewImageTransformOrigin = ref('50% 50%')
+const previewImageOffset = ref({ x: 0, y: 0 })
+const previewDragState = ref<{
+  pointerId: number
+  startClientX: number
+  startClientY: number
+  startOffsetX: number
+  startOffsetY: number
+} | null>(null)
 const selectedKeyId = ref<number | null>(null)
 const mode = ref<ImageMode>('generate')
 const prompt = ref('')
@@ -1125,6 +1150,13 @@ const resultSummaryText = computed(() => {
     ? t('imageGeneration.result.cachedSummary', { count: resultImages.value.length })
     : t('imageGeneration.result.readySummary', { count: resultImages.value.length })
 })
+
+const previewImageStyle = computed<CSSProperties>(() => ({
+  cursor: previewImageZoom.value > 1 ? (previewDragState.value ? 'grabbing' : 'grab') : 'default',
+  transform: `translate3d(${previewImageOffset.value.x}px, ${previewImageOffset.value.y}px, 0) scale(${previewImageZoom.value})`,
+  transformOrigin: previewImageTransformOrigin.value,
+  userSelect: 'none',
+}))
 
 watch(mode, (value) => {
   submitError.value = ''
@@ -2968,16 +3000,85 @@ async function writeClipboardText(content: string) {
 function openPreview(url: string, title = '') {
   previewImageUrl.value = url
   previewImageTitle.value = title
+  resetPreviewZoom()
 }
 
 function closePreview() {
   const closedUrl = previewImageUrl.value
   previewImageUrl.value = ''
   previewImageTitle.value = ''
+  finishPreviewDrag()
+  resetPreviewZoom()
   if (maskPreviewObjectUrl && closedUrl === maskPreviewObjectUrl) {
     URL.revokeObjectURL(maskPreviewObjectUrl)
     maskPreviewObjectUrl = null
   }
+}
+
+function handlePreviewWheel(event: WheelEvent) {
+  if (!previewImageUrl.value) return
+  const image = previewImageRef.value
+  if (image) {
+    const rect = image.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const originX = ((event.clientX - rect.left) / rect.width) * 100
+      const originY = ((event.clientY - rect.top) / rect.height) * 100
+      previewImageTransformOrigin.value = `${clampNumber(originX, 0, 100)}% ${clampNumber(originY, 0, 100)}%`
+    }
+  }
+
+  const wheelDelta = clampNumber(event.deltaY, -PREVIEW_MAX_WHEEL_DELTA, PREVIEW_MAX_WHEEL_DELTA)
+  const nextZoom = previewImageZoom.value * Math.exp(-wheelDelta * PREVIEW_WHEEL_ZOOM_SENSITIVITY)
+  previewImageZoom.value = clampNumber(nextZoom, PREVIEW_MIN_ZOOM, PREVIEW_MAX_ZOOM)
+  if (previewImageZoom.value <= 1) {
+    previewImageOffset.value = { x: 0, y: 0 }
+    finishPreviewDrag()
+  }
+}
+
+function handlePreviewPointerDown(event: PointerEvent) {
+  if (event.button !== 0 || previewImageZoom.value <= 1) return
+  const image = previewImageRef.value
+  if (!image) return
+  event.preventDefault()
+  previewDragState.value = {
+    pointerId: event.pointerId,
+    startClientX: event.clientX,
+    startClientY: event.clientY,
+    startOffsetX: previewImageOffset.value.x,
+    startOffsetY: previewImageOffset.value.y,
+  }
+  image.setPointerCapture(event.pointerId)
+}
+
+function handlePreviewPointerMove(event: PointerEvent) {
+  const dragState = previewDragState.value
+  if (!dragState || event.pointerId !== dragState.pointerId) return
+  event.preventDefault()
+  previewImageOffset.value = {
+    x: dragState.startOffsetX + event.clientX - dragState.startClientX,
+    y: dragState.startOffsetY + event.clientY - dragState.startClientY,
+  }
+}
+
+function finishPreviewDrag(event?: PointerEvent) {
+  const dragState = previewDragState.value
+  if (!dragState || (event && event.pointerId !== dragState.pointerId)) return
+  const image = previewImageRef.value
+  if (image?.hasPointerCapture(dragState.pointerId)) {
+    image.releasePointerCapture(dragState.pointerId)
+  }
+  previewDragState.value = null
+}
+
+function resetPreviewZoom() {
+  previewImageZoom.value = 1
+  previewImageTransformOrigin.value = '50% 50%'
+  previewImageOffset.value = { x: 0, y: 0 }
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
 function handleGlobalKeydown(event: KeyboardEvent) {
