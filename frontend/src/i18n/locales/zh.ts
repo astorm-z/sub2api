@@ -979,7 +979,7 @@ export default {
   },
   imageGeneration: {
     title: 'AI生图',
-    description: '使用你自己的 API Key 通过 Responses API 发起文生图、参考图生成或遮罩编辑请求，成功结果会在浏览器中临时保留最近一次。',
+    description: '使用你自己的 API Key 通过 Responses API 发起文生图、参考图生成或遮罩编辑请求，成功结果会在浏览器中临时保留最近 10 次。',
     endpointGenerate: '当前接口：/v1/responses',
     endpointEdit: '当前接口：/v1/responses',
     loadingKeys: '正在加载可用 API Key',
@@ -1081,7 +1081,7 @@ export default {
       pendingSummary: '请求已发出，正在等待图片返回。',
       streamingSummary: '已收到 {count} 张流式预览，最终结果仍在生成中。',
       emptySummary: '生成完成后会在这里展示最新结果。',
-      cachedSummary: '已从浏览器缓存恢复最近一次结果，共 {count} 张。',
+      cachedSummary: '已从浏览器历史记录恢复结果，共 {count} 张。',
       readySummary: '本次已生成 {count} 张图片。',
       generating: '正在生成图片',
       generatingHint: '不同模型和尺寸耗时不同，请稍等片刻。',
@@ -1097,9 +1097,9 @@ export default {
     },
     history: {
       title: '历史记录',
-      summary: '浏览器本地仅保留最近 {max} 次结果，新生成会覆盖旧历史。当前 {count} 次。',
+      summary: '浏览器本地使用 IndexedDB 保留最近 {max} 次结果，超过后自动清理旧历史。当前 {count} 次。',
       emptyTitle: '暂无历史记录',
-      emptyDescription: '成功生成后会自动临时保留最近一次。',
+      emptyDescription: '成功生成后会自动临时保留最近 10 次结果。',
       imageCount: '{count} 张',
       meta: '{mode} · {responseModel} · {imageModel} · {size}',
       emptyPrompt: '未记录提示词',
@@ -1109,7 +1109,7 @@ export default {
     },
     messages: {
       generateSuccess: '已生成 {count} 张图片',
-      saveGeneratedImagesSoon: '请尽快下载图片或复制链接保存。本站不会存储你的生成图片，浏览器缓存空间也有限，历史记录只会临时保留最近一次结果。',
+      saveGeneratedImagesSoon: '请尽快下载图片或复制链接保存。本站不会存储你的生成图片，浏览器 IndexedDB 空间也有限，历史记录只会临时保留最近 10 次结果。',
       historySaveSkipped: '图片已生成，但浏览器本地存储空间不足，本次结果未保存到历史记录。请立即下载图片或复制链接保存。',
       cancelled: '已取消本次请求',
       cacheCleared: '已清空生图历史记录',

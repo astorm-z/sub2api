@@ -876,8 +876,11 @@ interface OpenAIModelItem {
 
 const LEGACY_LOCAL_CACHE_KEY = 'sub2api:last-image-generation-result'
 const HISTORY_CACHE_KEY = 'sub2api:image-generation-history'
+const HISTORY_DB_NAME = 'sub2api-image-generation'
+const HISTORY_DB_VERSION = 1
+const HISTORY_DB_STORE = 'history'
 const ADVANCED_SETTINGS_CACHE_KEY = 'sub2api:image-generation-advanced-settings'
-const HISTORY_LIMIT = 1
+const HISTORY_LIMIT = 10
 const FIXED_PARTIAL_IMAGES = 0
 const DEFAULT_RESPONSE_MODEL = 'gpt-5.5'
 const DEFAULT_MODEL = 'gpt-image-2'
@@ -1181,7 +1184,7 @@ watch([quality, background, outputFormat, outputCompression, advancedOpen], () =
 
 onMounted(async () => {
   restoreAdvancedSettings()
-  restoreCachedResult()
+  await restoreCachedResult()
   window.addEventListener('keydown', handleGlobalKeydown)
   await loadEligibleKeys()
 })
@@ -1476,7 +1479,7 @@ async function submitGeneration() {
     restoredFromCache.value = false
     lastSavedAt.value = new Date().toISOString()
     activeHistoryId.value = ''
-    const historyPersisted = persistCachedResult()
+    const historyPersisted = await persistCachedResult()
     appStore.showSuccess(t('imageGeneration.messages.generateSuccess', { count: images.length }))
     if (historyPersisted) {
       appStore.showWarning(t('imageGeneration.messages.saveGeneratedImagesSoon'), 8000)
@@ -2426,20 +2429,20 @@ function captureCurrentForm(): CachedImageGenerationForm {
   }
 }
 
-function persistCachedResult(): boolean {
+async function persistCachedResult(): Promise<boolean> {
   const entry = createHistoryEntry(createCachedResultPayload(lastSavedAt.value, resultImages.value))
   imageHistory.value = [
     entry,
     ...imageHistory.value.filter((item) => item.id !== entry.id),
   ].slice(0, HISTORY_LIMIT)
-  const historyPersisted = persistImageHistory(entry.id)
+  const historyPersisted = await persistImageHistory(entry.id)
   activeHistoryId.value = historyPersisted ? entry.id : ''
   return historyPersisted
 }
 
-function restoreCachedResult() {
-  imageHistory.value = loadImageHistory()
-  persistImageHistory()
+async function restoreCachedResult() {
+  imageHistory.value = await loadImageHistory()
+  await persistImageHistory()
   activeHistoryId.value = ''
   resultImages.value = []
   restoredFromCache.value = false
@@ -2451,9 +2454,13 @@ function clearCachedResult() {
   clearHistoryConfirmOpen.value = true
 }
 
-function confirmClearCachedResult() {
-  localStorage.removeItem(HISTORY_CACHE_KEY)
-  localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY)
+async function confirmClearCachedResult() {
+  try {
+    await clearIndexedDbHistory()
+  } catch (error) {
+    console.warn('Failed to clear image generation IndexedDB history', error)
+  }
+  clearLocalStorageHistory()
   imageHistory.value = []
   activeHistoryId.value = ''
   resultImages.value = []
@@ -2464,18 +2471,21 @@ function confirmClearCachedResult() {
   appStore.showSuccess(t('imageGeneration.messages.cacheCleared'))
 }
 
-function loadImageHistory(): ImageGenerationHistoryEntry[] {
-  const history = readStoredHistory()
-  const legacyEntry = readLegacyCacheEntry()
-  const mergedHistory = legacyEntry
-    ? [legacyEntry, ...history.filter((entry) => entry.id !== legacyEntry.id)]
-    : history
-  return mergedHistory
-    .sort((leftEntry, rightEntry) => getHistoryTimestamp(rightEntry) - getHistoryTimestamp(leftEntry))
-    .slice(0, HISTORY_LIMIT)
+async function loadImageHistory(): Promise<ImageGenerationHistoryEntry[]> {
+  const history = await readIndexedDbHistory()
+  const localHistory = readLocalStorageHistory()
+  return mergeImageHistory([...localHistory, ...history])
 }
 
-function readStoredHistory(): ImageGenerationHistoryEntry[] {
+function readLocalStorageHistory(): ImageGenerationHistoryEntry[] {
+  const history = readLocalStorageStoredHistory()
+  const legacyEntry = readLegacyCacheEntry()
+  return legacyEntry
+    ? [legacyEntry, ...history.filter((entry) => entry.id !== legacyEntry.id)]
+    : history
+}
+
+function readLocalStorageStoredHistory(): ImageGenerationHistoryEntry[] {
   const raw = localStorage.getItem(HISTORY_CACHE_KEY)
   if (!raw) return []
 
@@ -2502,12 +2512,150 @@ function readLegacyCacheEntry(): ImageGenerationHistoryEntry | null {
       localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY)
       return null
     }
-    const legacyEntry = createHistoryEntry(cached)
-    localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY)
-    return legacyEntry
+    return createHistoryEntry(cached)
   } catch {
     localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY)
     return null
+  }
+}
+
+function clearLocalStorageHistory() {
+  localStorage.removeItem(HISTORY_CACHE_KEY)
+  localStorage.removeItem(LEGACY_LOCAL_CACHE_KEY)
+}
+
+async function readIndexedDbHistory(): Promise<ImageGenerationHistoryEntry[]> {
+  if (!isIndexedDbAvailable()) return []
+
+  let db: IDBDatabase | null = null
+  try {
+    db = await openImageHistoryDb()
+    const rawEntries = await getAllHistoryEntries(db)
+    return rawEntries
+      .map((item) => normalizeHistoryEntry(item))
+      .filter((item): item is ImageGenerationHistoryEntry => Boolean(item))
+      .sort((leftEntry, rightEntry) => getHistoryTimestamp(rightEntry) - getHistoryTimestamp(leftEntry))
+      .slice(0, HISTORY_LIMIT)
+  } catch (error) {
+    console.warn('Failed to read image generation IndexedDB history', error)
+    return []
+  } finally {
+    db?.close()
+  }
+}
+
+async function replaceIndexedDbHistory(entries: ImageGenerationHistoryEntry[]): Promise<void> {
+  if (!isIndexedDbAvailable()) {
+    throw new Error('IndexedDB is not available')
+  }
+
+  let db: IDBDatabase | null = null
+  try {
+    db = await openImageHistoryDb()
+    await writeHistoryEntries(db, entries)
+  } finally {
+    db?.close()
+  }
+}
+
+async function clearIndexedDbHistory(): Promise<void> {
+  if (!isIndexedDbAvailable()) return
+
+  let db: IDBDatabase | null = null
+  try {
+    db = await openImageHistoryDb()
+    await clearHistoryEntries(db)
+  } finally {
+    db?.close()
+  }
+}
+
+function isIndexedDbAvailable(): boolean {
+  return typeof window !== 'undefined' && 'indexedDB' in window && Boolean(window.indexedDB)
+}
+
+function openImageHistoryDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = window.indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION)
+
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(HISTORY_DB_STORE)) {
+        db.createObjectStore(HISTORY_DB_STORE, { keyPath: 'id' })
+      }
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('Failed to open image generation history database'))
+    request.onblocked = () => reject(new Error('Image generation history database upgrade is blocked'))
+  })
+}
+
+function getAllHistoryEntries(db: IDBDatabase): Promise<unknown[]> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(HISTORY_DB_STORE, 'readonly')
+    const store = transaction.objectStore(HISTORY_DB_STORE)
+    const request = store.getAll()
+
+    request.onsuccess = () => resolve(request.result as unknown[])
+    request.onerror = () => reject(request.error ?? transaction.error ?? new Error('Failed to read image generation history'))
+    transaction.onerror = () => reject(transaction.error ?? new Error('Failed to read image generation history'))
+  })
+}
+
+function writeHistoryEntries(db: IDBDatabase, entries: ImageGenerationHistoryEntry[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(HISTORY_DB_STORE, 'readwrite')
+    const store = transaction.objectStore(HISTORY_DB_STORE)
+
+    store.clear()
+    for (const entry of entries) {
+      store.put(toPlainHistoryEntry(entry))
+    }
+
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error ?? new Error('Failed to write image generation history'))
+    transaction.onabort = () => reject(transaction.error ?? new Error('Failed to write image generation history'))
+  })
+}
+
+function clearHistoryEntries(db: IDBDatabase): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(HISTORY_DB_STORE, 'readwrite')
+    transaction.objectStore(HISTORY_DB_STORE).clear()
+    transaction.oncomplete = () => resolve()
+    transaction.onerror = () => reject(transaction.error ?? new Error('Failed to clear image generation history'))
+    transaction.onabort = () => reject(transaction.error ?? new Error('Failed to clear image generation history'))
+  })
+}
+
+function toPlainHistoryEntry(entry: ImageGenerationHistoryEntry): ImageGenerationHistoryEntry {
+  return {
+    id: entry.id,
+    version: 1,
+    savedAt: entry.savedAt,
+    selectedKeyId: entry.selectedKeyId,
+    form: {
+      mode: entry.form.mode,
+      prompt: entry.form.prompt,
+      responseModel: entry.form.responseModel,
+      model: entry.form.model,
+      size: entry.form.size,
+      customSizeWidth: entry.form.customSizeWidth,
+      customSizeHeight: entry.form.customSizeHeight,
+      n: entry.form.n,
+      quality: entry.form.quality,
+      background: entry.form.background,
+      outputFormat: entry.form.outputFormat,
+      outputCompression: entry.form.outputCompression,
+      advancedOpen: entry.form.advancedOpen,
+    },
+    results: entry.results.map((image) => ({
+      url: image.url,
+      mimeType: image.mimeType,
+      fileName: image.fileName,
+      revisedPrompt: image.revisedPrompt,
+      isPartial: image.isPartial,
+    })),
   }
 }
 
@@ -2652,12 +2800,26 @@ function getHistoryTimestamp(entry: ImageGenerationHistoryEntry): number {
   return Number.isFinite(timestamp) ? timestamp : 0
 }
 
-function persistImageHistory(preferredEntryId?: string): boolean {
-  const nextHistory = imageHistory.value.slice(0, HISTORY_LIMIT)
+function mergeImageHistory(entries: ImageGenerationHistoryEntry[]): ImageGenerationHistoryEntry[] {
+  const merged = new Map<string, ImageGenerationHistoryEntry>()
+  for (const entry of entries) {
+    const existing = merged.get(entry.id)
+    if (!existing || getHistoryTimestamp(entry) >= getHistoryTimestamp(existing)) {
+      merged.set(entry.id, entry)
+    }
+  }
+  return [...merged.values()]
+    .sort((leftEntry, rightEntry) => getHistoryTimestamp(rightEntry) - getHistoryTimestamp(leftEntry))
+    .slice(0, HISTORY_LIMIT)
+}
+
+async function persistImageHistory(preferredEntryId?: string): Promise<boolean> {
+  const nextHistory = mergeImageHistory(imageHistory.value).slice(0, HISTORY_LIMIT)
 
   if (nextHistory.length === 0) {
     try {
-      localStorage.setItem(HISTORY_CACHE_KEY, '[]')
+      await clearIndexedDbHistory()
+      clearLocalStorageHistory()
       return false
     } catch (error) {
       if (!isQuotaExceededError(error)) {
@@ -2669,24 +2831,24 @@ function persistImageHistory(preferredEntryId?: string): boolean {
 
   while (nextHistory.length > 0) {
     try {
-      localStorage.setItem(HISTORY_CACHE_KEY, JSON.stringify(nextHistory))
+      await replaceIndexedDbHistory(nextHistory)
       imageHistory.value = nextHistory
+      clearLocalStorageHistory()
       return preferredEntryId
         ? nextHistory.some((entry) => entry.id === preferredEntryId)
         : true
     } catch (error) {
       if (!isQuotaExceededError(error)) {
         console.warn('Failed to persist image generation history', error)
-        return preferredEntryId
-          ? nextHistory.some((entry) => entry.id === preferredEntryId)
-          : false
+        return false
       }
       nextHistory.pop()
     }
   }
 
   try {
-    localStorage.setItem(HISTORY_CACHE_KEY, '[]')
+    await clearIndexedDbHistory()
+    clearLocalStorageHistory()
   } catch (error) {
     if (!isQuotaExceededError(error)) {
       console.warn('Failed to reset image generation history after quota overflow', error)

@@ -975,7 +975,7 @@ export default {
   },
   imageGeneration: {
     title: 'AI Image Generation',
-    description: 'Use your own API key through the Responses API to generate images, use reference images, or perform mask edits. The latest successful result is kept temporarily in this browser.',
+    description: 'Use your own API key through the Responses API to generate images, use reference images, or perform mask edits. The latest 10 successful results are kept temporarily in this browser.',
     endpointGenerate: 'Endpoint: /v1/responses',
     endpointEdit: 'Endpoint: /v1/responses',
     loadingKeys: 'Loading available API keys',
@@ -1077,7 +1077,7 @@ export default {
       pendingSummary: 'Request sent. Waiting for images to arrive.',
       streamingSummary: '{count} streamed preview image(s) received. Final images are still generating.',
       emptySummary: 'Your latest generated images will appear here.',
-      cachedSummary: 'Restored the latest cached result from your browser, {count} image(s).',
+      cachedSummary: 'Restored a result from browser history, {count} image(s).',
       readySummary: '{count} image(s) generated in this run.',
       generating: 'Generating images',
       generatingHint: 'Different models and sizes can take different amounts of time.',
@@ -1093,9 +1093,9 @@ export default {
     },
     history: {
       title: 'History',
-      summary: 'Only the latest {max} result(s) are kept locally in this browser. New generations overwrite older history. Current: {count}.',
+      summary: 'IndexedDB keeps the latest {max} local result(s) in this browser. Older history is cleaned automatically. Current: {count}.',
       emptyTitle: 'No history yet',
-      emptyDescription: 'Successful generations will temporarily keep the latest result here.',
+      emptyDescription: 'Successful generations will temporarily keep the latest 10 results here.',
       imageCount: '{count} image(s)',
       meta: '{mode} · {responseModel} · {imageModel} · {size}',
       emptyPrompt: 'No prompt recorded',
@@ -1105,7 +1105,7 @@ export default {
     },
     messages: {
       generateSuccess: '{count} image(s) generated',
-      saveGeneratedImagesSoon: 'Please download the images or copy their links soon. This site does not store generated images, browser storage is limited, and history only keeps the latest result temporarily.',
+      saveGeneratedImagesSoon: 'Please download the images or copy their links soon. This site does not store generated images, browser IndexedDB space is limited, and history only keeps the latest 10 results temporarily.',
       historySaveSkipped: 'Images were generated, but browser storage is full, so this result was not saved to history. Please download the images or copy their links now.',
       cancelled: 'The request has been cancelled',
       cacheCleared: 'Image generation history has been cleared',
